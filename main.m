@@ -45,7 +45,7 @@ for SNR_idx = 1:length(SNR_vec)
         A1 = toeplitz(a1_c, a1_r);
 
         % verify eigen vector with eigenvalue = 1
-        if (est_theta == theta)
+        if (est_theta == theta && SNR == Inf)
             for k = 1:N
                 x_k = x_nm(k,:).';
                 assert(norm(1*x_k - A1*x_k) < 1e-10);
@@ -58,7 +58,7 @@ for SNR_idx = 1:length(SNR_vec)
         A2 = toeplitz(a2_c, a2_r);
 
         % verify eigen vector with eigenvalue = 1
-        if (est_theta == theta)
+        if (est_theta == theta && SNR == Inf)
             for k = 1:M
                 x_k = x_nm(:,k);
                 assert(norm(1*x_k - A2*x_k) < 1e-10);
@@ -69,7 +69,7 @@ for SNR_idx = 1:length(SNR_vec)
         A = kron(A2, A1);
         x_mn = x_nm.';
         x = x_mn(:);
-        if (est_theta == theta)
+        if (est_theta == theta && SNR == Inf)
             assert(norm(1*x - A*x) < 1e-9);
         end
 
@@ -97,9 +97,12 @@ for SNR_idx = 1:length(SNR_vec)
     piquancy(SNR_idx,:) = piquancy(SNR_idx,:)/max(piquancy(SNR_idx,:));
 end
 figure; 
+plots = cell(size(SNR_vec));
 for SNR_idx = 1:length(SNR_vec)
-    plot(est_theta_vec, piquancy(SNR_idx,:), 'LineWidth', 2); hold on;
+    plots{SNR_idx} = plot(est_theta_vec, piquancy(SNR_idx,:), 'LineWidth', 2, 'DisplayName', ['SNR = ' num2str(SNR_vec(SNR_idx)) ' [dB]']); 
+    hold on;
 end
 xline(theta, '--r');
 xlabel('$\theta$', 'Interpreter', 'latex', 'FontSize', 14);
 ylabel('$\xi(\theta)$', 'Interpreter', 'latex', 'FontSize', 14);
+legend([plots{1} plots{2}], 'Interpreter', 'latex', 'FontSize', 14, 'Location', 'best')
