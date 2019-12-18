@@ -21,7 +21,7 @@ M = 6
 m = np.arange(1, M+1)  # sensors
 f0 = 1e3               # singletone [Hz]
 w0 = 2 * np.pi * f0    # [rad / sec]
-fs = 100e3              # sampling rate [Hz]
+fs = 8e3               # sampling rate [Hz]
 Amp = 1                # amplitude [V]
 delta = 0.1            # uniform spacing between sensors [m]
 c = 340                # speed of sound [m / s]
@@ -53,6 +53,16 @@ class Signal():
 
         # after a bandpass filter around f0 (filter out the negative spectrum)
         x1_bp = Amp * np.exp(1j * w0 / fs * n)
+
+        # xr_theta_d = np.real(x1_bp)
+        # xi_theta_d = np.imag(x1_bp)
+        # plt.figure()
+        # plt.title(fr'Signal from theta_d')
+        # plt.plot(xr_theta_d, label='Re{x(n)}')
+        # plt.plot(xi_theta_d, label='Im{x(n)}')
+        # plt.legend()
+        # plt.show()
+
         x_bp_M = np.matlib.repmat(np.transpose(np.column_stack(x1_bp)), 1, M)
         d_N = np.matlib.repmat(d, N, 1)
         x_nm = np.multiply(x_bp_M, d_N)  # multiply by place (.* in matlab)
@@ -293,10 +303,22 @@ def plot_accuracy(args, train_acc_vec, test_acc_vec):
 def plot_random_signals(data_loader):
     (xr_batch, xi_batch), y_batch = iter(data_loader).next()
 
+    xr_theta_d = xr_batch[y_batch == 1, :]
+    xi_theta_d = xi_batch[y_batch == 1, :]
+
     plt.figure()
-    plt.title(fr'Signal')
-    plt.plot(xr_batch[0, 0:N - 1].numpy(), label='Re{x(n)}')
-    plt.plot(xi_batch[0, 0:N - 1].numpy(), label='Im{x(n)}')
+    plt.title(fr'Signal from theta_d')
+    plt.plot(xr_theta_d[0, 0:N - 1].numpy(), label='Re{x(n)}')
+    plt.plot(xi_theta_d[0, 0:N - 1].numpy(), label='Im{x(n)}')
+    plt.legend()
+
+    xr_rand_theta = xr_batch[y_batch == 0, :]
+    xi_rand_theta = xi_batch[y_batch == 0, :]
+
+    plt.figure()
+    plt.title(fr'Signal not from theta_d')
+    plt.plot(xr_rand_theta[0, 0:N - 1].numpy(), label='Re{x(n)}')
+    plt.plot(xi_rand_theta[0, 0:N - 1].numpy(), label='Im{x(n)}')
     plt.legend()
 
 def main():
