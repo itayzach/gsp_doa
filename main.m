@@ -17,7 +17,7 @@ d = exp(-1j*w0/fs*(m-1)*tau);       % steering vector
 %% Signals
 % after a bandpass filter around f0 (filter out the negative spectrum)
 x1_bp_noiseless = B*exp(1j*w0/fs*n);
-SNR_vec = [inf 5];
+SNR_vec = [5 inf];
 
 est_theta_vec = 0:180;
 % est_theta_vec = [theta 30 120];
@@ -26,14 +26,15 @@ piquancy = zeros(length(SNR_vec), length(est_theta_vec));
 for SNR_idx = 1:length(SNR_vec)
     SNR = SNR_vec(SNR_idx);
     sigma = B/10^(SNR/20);
-    awgn = sigma*randn(N,1);
-    x1_bp = x1_bp_noiseless + awgn;
-    disp(snr(x1_bp_noiseless, awgn))
+    awgn = sigma*randn(N, M);
+    x1_bp = x1_bp_noiseless;
+    
 
     % build time-space signal matrix
     x_bp_M = repmat(x1_bp, 1, M);
     d_N = repmat(d, N, 1);
-    x_nm = x_bp_M.*d_N;
+    x_nm = x_bp_M.*d_N + awgn;
+    disp(snr(x_nm, awgn))
 
     for th_idx = 1:length(est_theta_vec)
         %% Space-domain adjacency matrix
