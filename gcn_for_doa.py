@@ -12,18 +12,19 @@ import scipy
 from complexLayers import ComplexLinear
 from complexFunctions import complex_relu
 import matplotlib.pyplot as plt
+import networkx as nx
 
 # Parmeters
 N = 41
 n = np.arange(0, N)    # samples
 M = 6
 m = np.arange(1, M+1)  # sensors
-f0 = 1e3               # singletone[Hz]
+f0 = 1e3               # singletone [Hz]
 w0 = 2 * np.pi * f0    # [rad / sec]
-fs = 8e3               # sampling rate[Hz]
-B = 1                  # amplitude[V]
-delta = 0.1            # uniform spacing between sensors[m]
-c = 340                # speed of sound[m / s]
+fs = 100e3              # sampling rate [Hz]
+Amp = 1                # amplitude [V]
+delta = 0.1            # uniform spacing between sensors [m]
+c = 340                # speed of sound [m / s]
 
 theta_d = 70.3  # [degrees]
 
@@ -35,55 +36,129 @@ def signaltonoise(a, axis=0, ddof=0):
     return np.where(sd == 0, 0, m / sd)
 
 
-def getNoiselessSignal(theta):
-    tau = delta * np.cos(theta * np.pi / 180) * fs / c  # [samples]
-    d = np.exp(-1j * w0 / fs * (m - 1) * tau)  # steering vector
 
-    # % % Signals
-    # % after a bandpass filter around f0 (filter out the negative spectrum)
-    x1_bp = B * np.exp(1j * w0 / fs * n)
-    x_bp_M = np.matlib.repmat(np.transpose(np.column_stack(x1_bp)), 1, M)
-    d_N = np.matlib.repmat(d, N, 1)
-    x_nm = np.multiply(x_bp_M, d_N)
-    x_noiseless = np.ravel(x_nm)
 
-    return x_noiseless
+class Signal():
+    def __init__(self, theta, SNR):
+        self.SNR = SNR
+        self.theta = theta
+        self.label = (theta == theta_d)
+        self.x_noiseless = self.getNoiselessSignal()
+        self.awgn = self.genAWGN()
+        self.x = self.x_noiseless + self.awgn
 
+    def getNoiselessSignal(self):
+        tau = delta * np.cos(self.theta * np.pi / 180) * fs / c  # [samples]
+        d = np.exp(-1j * w0 / fs * (m - 1) * tau)  # steering vector
+
+        # after a bandpass filter around f0 (filter out the negative spectrum)
+        x1_bp = Amp * np.exp(1j * w0 / fs * n)
+        x_bp_M = np.matlib.repmat(np.transpose(np.column_stack(x1_bp)), 1, M)
+        d_N = np.matlib.repmat(d, N, 1)
+        x_nm = np.multiply(x_bp_M, d_N)  # multiply by place (.* in matlab)
+        x_noiseless = np.ravel(x_nm)  # matrix to vector (A(:) in matlab)
+
+        return x_noiseless
+
+    def genAWGN(self):
+        sigma = Amp / 10 ** (self.SNR / 20)
+        mu = 0
+        awgn = sigma * np.random.normal(mu, sigma, N * M)
+        return awgn
 
 def generateSyntheticData(K):
-    SNR_vec = np.linspace(start=-20, stop=20, num=int(K / 2))
+    SNR_vec = np.linspace(start=1000, stop=1000, num=int(K / 2))
 
-    X_true = np.zeros((int(K / 2), N * M), dtype=complex)
+    signals_true = []
     # Generate training data of True
     for SNR_idx, SNR in enumerate(SNR_vec):
-        # Signal
-        sigma = B / 10 ** (SNR / 20)
-        mu = 0
-        awgn = sigma * np.random.normal(mu, sigma, N * M)
+        signals_true.append(Signal(theta_d, SNR))
 
-        x_noiseless = getNoiselessSignal(theta=70.3)
-        X_true[SNR_idx, :] = x_noiseless + awgn
-
-    X_false = np.zeros((int(K / 2), N * M), dtype=complex)
+    signals_false = []
     for SNR_idx, SNR in enumerate(SNR_vec):
-        theta = np.random.uniform(0, 180)  # [degrees]
-        x_noisless = getNoiselessSignal(theta)
+        rand_theta = np.random.uniform(0, 180)  # [degrees]
+        signals_false.append(Signal(rand_theta, SNR))
 
-        # Signal
-        sigma = B / 10 ** (SNR / 20)
-        mu = 0
-        awgn = sigma * np.random.normal(mu, sigma, N * M)
+    signals = signals_true + signals_false
 
-        X_false[SNR_idx, :] = x_noisless + awgn
-
-    labels = np.concatenate((np.full(int(K / 2), True, dtype=int), np.full(int(K / 2), False, dtype=int)))
-    X = np.concatenate((X_true, X_false), axis=0)
-
+    labels = np.asarray([sig.label for sig in signals], dtype=np.long)
+    X = np.asarray([sig.x for sig in signals])
     labels = torch.tensor(labels, dtype=torch.long)
     Xr = torch.tensor(np.real(X), dtype=torch.float)
     Xi = torch.tensor(np.imag(X), dtype=torch.float)
 
     return Xr, Xi, labels
+
+
+def LaplacianDoA():
+    est_theta_vec = np.arange(0, 180)
+    piquancy = np.zeros(len(est_theta_vec))
+
+    SNR_vec = np.array([-15, float("inf")])  # [dB]
+    plt.figure()
+    for SNR_idx, SNR in enumerate(SNR_vec):
+        # Signal
+        sig = Signal(theta_d, SNR)
+        x_noiseless = sig.x_noiseless
+        x = sig.x
+        print('SNR = {0:.2f}'.format(signaltonoise(abs(x))))
+        for th_idx, est_theta in enumerate(est_theta_vec):
+
+            # Adjacency matrix
+            est_tau = delta * np.cos(est_theta * np.pi / 180) * fs / c  # [samples]
+
+            a1_r = 0.5 * np.concatenate((np.array([0, np.exp(1j * w0 / fs * est_tau)]),
+                                         np.zeros(M - 3),
+                                         np.array([np.exp(1j * w0 / fs * (M - 1) * est_tau)])),
+                                        axis=0)
+            a1_c = a1_r.conj().T  # transpose and conj
+            A1 = scipy.linalg.toeplitz(a1_c, a1_r)
+
+            a2_r = 0.5 * np.concatenate((np.array([0, np.exp(-1j * w0 / fs)]),
+                                         np.zeros(N - 3),
+                                         np.array([np.exp(-1j * w0 / fs * (N - 1))])),
+                                        axis=0)
+            a2_c = a2_r.conj().T  # transpose and conj
+            A2 = scipy.linalg.toeplitz(a2_c, a2_r)
+
+            A = np.kron(A2, A1)
+
+            if est_theta == theta_d:
+                assert (np.linalg.norm(1 * x_noiseless - np.matmul(A, x_noiseless)) < 1e-9)
+
+            # Degree matrix
+            dii = np.sum(A, axis=1, keepdims=False)
+            D = np.diag(dii)
+            # Laplacian
+            L = D - A
+            w, Phi = np.linalg.eigh(L)
+
+            # Plot spectrum
+            if est_theta == theta_d:
+                plt.figure()
+                plt.plot(w)
+                plt.xlabel(r'$\lambda$')
+
+            llambda, V = np.linalg.eigh(A)
+            i_eig = np.argwhere(abs(llambda - 1) < 1e-10).ravel()
+            i_eig = i_eig[0]
+
+
+            x_hat = np.matmul(V.conj().T, x)
+            # % figure; stem(abs(x_hat))
+            x_hat_normed = x_hat / abs(x_hat[i_eig])
+            x_hat_ = np.delete(x_hat_normed, i_eig)
+            piquancy[th_idx] = 1 / np.sqrt(sum(abs(x_hat_) ** 2))
+        piquancy = piquancy / max(piquancy)
+
+        plt.axvline(x=theta_d, color='r')
+        plt.plot(piquancy, label='SNR = ' + str(SNR) + ' [dB]', linewidth=2)
+        plt.xlabel(r'$\theta$')
+        plt.ylabel(r'$\xi(\theta)$')
+    plt.legend(loc='upper right')
+    plt.xticks(np.arange(0, 180, step=20))
+    plt.xlim(est_theta_vec[0], est_theta_vec[-1])
+    plt.ylim(0, 1)
 
 
 class GraphSignalsDataset(torch.utils.data.Dataset):
@@ -203,7 +278,8 @@ def test(args, model, device, test_loader):
     return correct/len(test_loader.dataset)
 
 
-def plot_progress(args, train_acc_vec, test_acc_vec):
+def plot_accuracy(args, train_acc_vec, test_acc_vec):
+    plt.figure()
     plt.plot(max(test_acc_vec) * np.ones(len(test_acc_vec)), color='red', linestyle='dashed')
     plt.plot(train_acc_vec, label='training acc', linewidth=2)
     plt.plot(test_acc_vec, label=f'test acc ({max(test_acc_vec):.2f}%)', linewidth=2)
@@ -213,6 +289,15 @@ def plot_progress(args, train_acc_vec, test_acc_vec):
     plt.xlim(0, args.epochs)
     plt.ylim(0, 100)
 
+
+def plot_random_signals(data_loader):
+    (xr_batch, xi_batch), y_batch = iter(data_loader).next()
+
+    plt.figure()
+    plt.title(fr'Signal')
+    plt.plot(xr_batch[0, 0:N - 1].numpy(), label='Re{x(n)}')
+    plt.plot(xi_batch[0, 0:N - 1].numpy(), label='Im{x(n)}')
+    plt.legend()
 
 def main():
     plt.rcParams['font.size'] = 14
@@ -232,6 +317,8 @@ def main():
                         help='random seed (default: 1)')
     parser.add_argument('--log-interval', type=int, default=100,
                         help='how many batches to wait before logging training status')
+    parser.add_argument('--plot_gsp_figs', type=int, default=True,
+                        help='plot GSP figures')
 
     args = parser.parse_args()
     use_cuda = False
@@ -258,6 +345,12 @@ def main():
     train_acc_vec = np.array([])
     test_acc_vec = np.array([])
 
+    if args.plot_gsp_figs:
+        LaplacianDoA()
+        plt.show()
+        plot_random_signals(train_loader)
+        plt.show()
+
     for epoch in range(1, args.epochs + 1):
         train_acc = train(args, model, device, train_loader, optimizer, epoch)
         test_acc = test(args, model, device, test_loader)
@@ -265,7 +358,7 @@ def main():
         train_acc_vec = np.append(train_acc_vec, 100.0*train_acc)
         test_acc_vec = np.append(test_acc_vec, 100.0*test_acc)
 
-    plot_progress(args, train_acc_vec, test_acc_vec)
+    plot_accuracy(args, train_acc_vec, test_acc_vec)
     plt.show()
 
 
