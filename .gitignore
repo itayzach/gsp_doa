@@ -3,3 +3,4 @@
 *.swp
 *.ini
 .idea/
+__pycache__/
