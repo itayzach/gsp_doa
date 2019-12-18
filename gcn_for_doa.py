@@ -77,7 +77,7 @@ class Signal():
         return awgn
 
 def generateSyntheticData(K):
-    SNR_vec = np.linspace(start=1000, stop=1000, num=int(K / 2))
+    SNR_vec = np.linspace(start=-15, stop=100, num=int(K / 2))
 
     signals_true = []
     # Generate training data of True
