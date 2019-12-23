@@ -115,10 +115,10 @@ def main():
 
     if args.plot_gsp_figs:
         laplacian_doa()
-        plt.show()
-        plot_random_signal(train_set.get_signals(), label=True, snr=-100)
-        plot_random_signal(train_set.get_signals(), label=False, snr=-100)
-        plt.show()
+        plot_random_signal(train_set.get_signals(), label=True, snr=0)
+        plot_random_signal(train_set.get_signals(), label=False, snr=0)
+        plot_random_signal(train_set.get_signals(), label=True, snr=5)
+        plot_random_signal(train_set.get_signals(), label=False, snr=5)
 
     for epoch in range(1, args.epochs + 1):
         train_acc = train(args, model, device, train_loader, optimizer, epoch)

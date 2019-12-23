@@ -24,7 +24,7 @@ def get_noiseless_signal(theta):
     x_bp_M = np.matlib.repmat(np.transpose(np.column_stack(x1_bp)), 1, M)
     d_N = np.matlib.repmat(d, N, 1)
     x_nm = np.multiply(x_bp_M, d_N)  # multiply by place (.* in matlab)
-    x_noiseless = np.ravel(x_nm)  # matrix to vector (A(:) in matlab)
+    x_noiseless = x_nm.flatten(order='F')  # matrix to vector (A(:) in matlab)
 
     return x_noiseless
 
@@ -155,29 +155,32 @@ def plot_random_signal(signals, label, snr):
     if len(idx) > 1:
         idx = idx[0]
 
-    xr = np.real(signals['x'][idx])
-    xi = np.imag(signals['x'][idx])
     x = signals['x'][idx]
+    xr = np.real(x)
+    xi = np.imag(x)
 
     # split data to sensors
     x1 = x[0:N]
-    xM = x[(M - 1) * N:M * N]
+    xr1 = xr[0:N - 1]
+    xi1 = xi[0:N - 1]
 
     # fft
-    x1_h = np.abs(np.fft.fft(x1))/N
-    xM_h = np.abs(np.fft.fft(xM))/N
+    L = 2 ** np.ceil(np.log2(N))  # nextpow2
+    k = np.arange(-L / 2, L / 2)  # frequency bins
+    f_Hz = k * (fs / L)           # freq bins -> [Hz]
+    f_kHz = f_Hz / 1e3            # just in kHz
+
+    x1_hat = np.fft.fftshift(np.fft.fft(x1, L))/L
     snr = signals['snr'][idx]
     theta = signals['theta'][idx]
 
-    # Frequency axis
-    f = 1e-3*(fs/2)/N * n
-
     # Plot
-    plt.figure()
-    plt.title(fr'Signal from $\theta = {theta:.1f}$' + '\n' + f'with SNR = ${snr:.2f}$ [dB]')
-    plt.plot(xr[0:N - 1], label='Re{x(n)}')
-    plt.plot(xi[0:N - 1], label='Im{x(n)}')
-    # plt.plot(f, x1_h, label=r'$|\hat{x}_1(f)|$')
-    # plt.plot(f, xM_h, label=r'$|\hat{x}_M(f)|$')
-    plt.legend()
+    fig, (ax1, ax2) = plt.subplots(2)
+    ax1.set_title(fr'Signal from $\theta = {theta:.1f}^\circ$' + '\n' + f'with SNR = ${snr:.2f}$ [dB]')
+    ax1.plot(xr1, label='Re{x(n)}')
+    ax1.plot(xi1, label='Im{x(n)}')
+    ax1.legend()
+    ax2.set_title('Freq')
+    ax2.stem(f_kHz, np.abs(x1_hat), label=r'$|\hat{x}_1(f)|$')
+    ax2.legend()
     plt.show()
