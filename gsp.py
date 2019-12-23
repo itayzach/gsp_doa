@@ -23,8 +23,19 @@ def get_noiseless_signal(theta):
 
     x_bp_M = np.matlib.repmat(np.transpose(np.column_stack(x1_bp)), 1, M)
     d_N = np.matlib.repmat(d, N, 1)
+
+    # x_nm is:
+    #   -------> Space
+    #   |     [ x(n=0,m=0),    ...,    x(n=0,m=M-1) ]
+    #  Time   [    ...        x(n,m),      ...      ]
+    #   |     [ x(n=N-1,m=0),  ...,  x(n=N-1,m=M-1) ]
+    #  \/
     x_nm = np.multiply(x_bp_M, d_N)  # multiply by place (.* in matlab)
-    x_noiseless = x_nm.flatten(order='F')  # matrix to vector (A(:) in matlab)
+
+    # x_noiseless is row-stack of x_nm:
+    # [  sensor0,     sensor1,  ...,   sensorM-1     |      sensor0,    ...,    sensorM-1   ]
+    # [ x(n=0,m=0), x(n=0,m=1), ...,  x(n=0,m=M-1), ..., x(n=N-1,m=0),  ...,  x(n=N-1,m=M-1)]
+    x_noiseless = np.ravel(x_nm)
 
     return x_noiseless
 
@@ -112,8 +123,9 @@ def laplacian_doa():
             # Adjacency matrix
             A, Ar, Ai = get_adjacency(est_theta)
 
-            if est_theta == theta_d:
-                assert (np.linalg.norm(1 * x_noiseless - np.matmul(A, x_noiseless)) < 1e-9)
+            if est_theta == theta_d and snr == float("inf"):
+                Ax = np.matmul(A, x_noiseless)
+                assert (np.linalg.norm(1 * x_noiseless - Ax) < 1e-9)
 
             # Degree matrix
             dii = np.sum(A, axis=1, keepdims=False)
@@ -147,6 +159,7 @@ def laplacian_doa():
     plt.xticks(np.arange(0, 180, step=20))
     plt.xlim(est_theta_vec[0], est_theta_vec[-1])
     plt.ylim(0, 1)
+    plt.show()
 
 
 def plot_random_signal(signals, label, snr):
@@ -160,9 +173,10 @@ def plot_random_signal(signals, label, snr):
     xi = np.imag(x)
 
     # split data to sensors
-    x1 = x[0:N]
-    xr1 = xr[0:N - 1]
-    xi1 = xi[0:N - 1]
+    indexes = np.arange(start=0, stop=N * M, step=M)
+    x1 = x[indexes]
+    xr1 = xr[indexes]
+    xi1 = xi[indexes]
 
     # fft
     L = 2 ** np.ceil(np.log2(N))  # nextpow2
@@ -179,8 +193,9 @@ def plot_random_signal(signals, label, snr):
     ax1.set_title(fr'Signal from $\theta = {theta:.1f}^\circ$' + '\n' + f'with SNR = ${snr:.2f}$ [dB]')
     ax1.plot(xr1, label='Re{x(n)}')
     ax1.plot(xi1, label='Im{x(n)}')
+    ax1.set_xlabel('n [sample]')
     ax1.legend()
-    ax2.set_title('Freq')
     ax2.stem(f_kHz, np.abs(x1_hat), label=r'$|\hat{x}_1(f)|$')
+    ax2.set_xlabel('f [kHz]')
     ax2.legend()
     plt.show()
