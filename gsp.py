@@ -14,67 +14,85 @@ def signaltonoise(a, axis=0, ddof=0):
     return np.where(sd == 0, 0, m / sd)
 
 
-class Signal:
-    def __init__(self, theta, SNR):
-        self.SNR = SNR
-        self.theta = theta
-        self.label = (theta == theta_d)
-        self.x_noiseless = self.get_noiseless_signal()
-        self.awgn = self.gen_awgn()
-        self.x = self.x_noiseless + self.awgn
+def get_noiseless_signal(theta):
+    tau = delta * np.cos(theta * np.pi / 180) * fs / c  # [samples]
+    d = np.exp(-1j * w0 / fs * (m - 1) * tau)  # steering vector
 
-    def get_noiseless_signal(self):
-        tau = delta * np.cos(self.theta * np.pi / 180) * fs / c  # [samples]
-        d = np.exp(-1j * w0 / fs * (m - 1) * tau)  # steering vector
+    # after a bandpass filter around f0 (filter out the negative spectrum)
+    x1_bp = Amp * np.exp(1j * w0 / fs * n)
 
-        # after a bandpass filter around f0 (filter out the negative spectrum)
-        x1_bp = Amp * np.exp(1j * w0 / fs * n)
+    x_bp_M = np.matlib.repmat(np.transpose(np.column_stack(x1_bp)), 1, M)
+    d_N = np.matlib.repmat(d, N, 1)
+    x_nm = np.multiply(x_bp_M, d_N)  # multiply by place (.* in matlab)
+    x_noiseless = np.ravel(x_nm)  # matrix to vector (A(:) in matlab)
 
-        # xr_theta_d = np.real(x1_bp)
-        # xi_theta_d = np.imag(x1_bp)
-        # plt.figure()
-        # plt.title(fr'Signal from theta_d')
-        # plt.plot(xr_theta_d, label='Re{x(n)}')
-        # plt.plot(xi_theta_d, label='Im{x(n)}')
-        # plt.legend()
-        # plt.show()
+    return x_noiseless
 
-        x_bp_M = np.matlib.repmat(np.transpose(np.column_stack(x1_bp)), 1, M)
-        d_N = np.matlib.repmat(d, N, 1)
-        x_nm = np.multiply(x_bp_M, d_N)  # multiply by place (.* in matlab)
-        x_noiseless = np.ravel(x_nm)  # matrix to vector (A(:) in matlab)
 
-        return x_noiseless
-
-    def gen_awgn(self):
-        sigma = Amp / 10 ** (self.SNR / 20)
-        mu = 0
-        awgn = sigma * np.random.normal(mu, sigma, N * M)
-        return awgn
+def gen_awgn(snr):
+    sigma = Amp / 10 ** (snr / 20)
+    mu = 0
+    awgn = sigma * (np.random.normal(mu, sigma, N * M) + 1j*np.random.normal(mu, sigma, N * M))
+    return awgn
 
 
 def generate_synthetic_data(K):
-    SNR_vec = np.linspace(start=-15, stop=100, num=int(K / 2))
+    snr_vec = np.concatenate((np.linspace(start=-15, stop=100, num=int(K / 2)), np.linspace(start=-15, stop=100, num=int(K / 2))))
+    theta_vec = np.concatenate((theta_d*np.ones(int(K/2), dtype=float), np.random.uniform(0, 180, int(K/2))))
+    noiseless_vec = np.empty([K, N*M], dtype=complex)
+    x_vec = np.empty([K, N*M], dtype=complex)
+    awgn_vec = np.empty([K, N*M], dtype=complex)
+    labels_vec = np.empty(K, dtype=np.long)
+    for snr_idx, snr in enumerate(snr_vec):
+        theta = theta_vec[snr_idx]
+        x_noiseless = get_noiseless_signal(theta)
 
-    signals_true = []
-    # Generate training data of True
-    for SNR_idx, SNR in enumerate(SNR_vec):
-        signals_true.append(Signal(theta_d, SNR))
+        awgn = gen_awgn(snr)
+        x = x_noiseless + awgn
+        label = theta == theta_d
 
-    signals_false = []
-    for SNR_idx, SNR in enumerate(SNR_vec):
-        rand_theta = np.random.uniform(0, 180)  # [degrees]
-        signals_false.append(Signal(rand_theta, SNR))
+        # append
+        noiseless_vec[snr_idx, :] = x_noiseless
+        awgn_vec[snr_idx, :] = awgn
+        x_vec[snr_idx, :] = x
+        labels_vec[snr_idx] = label
 
-    signals = signals_true + signals_false
+    signals = {
+        'snr': snr_vec,
+        'theta': theta_vec,
+        'x_noiseless': noiseless_vec,
+        'awgn': awgn_vec,
+        'x': x_vec,
+        'label': labels_vec
+    }
 
-    labels = np.asarray([sig.label for sig in signals], dtype=np.long)
-    X = np.asarray([sig.x for sig in signals])
-    labels = torch.tensor(labels, dtype=torch.long)
-    Xr = torch.tensor(np.real(X), dtype=torch.float)
-    Xi = torch.tensor(np.imag(X), dtype=torch.float)
+    return signals
 
-    return Xr, Xi, labels
+
+def get_adjacency(theta):
+    # Space-domain adjacency
+    tau_d = delta * np.cos(theta * np.pi / 180) * fs / c  # [samples]
+    a1_r = 0.5 * np.concatenate((np.array([0, np.exp(1j * w0 / fs * tau_d)]),
+                                 np.zeros(M - 3),
+                                 np.array([np.exp(1j * w0 / fs * (M - 1) * tau_d)])),
+                                axis=0)
+    a1_c = a1_r.conj().T  # transpose and conj
+    A1 = scipy.linalg.toeplitz(a1_c, a1_r)
+
+    # Time-domain adjacency
+    a2_r = 0.5 * np.concatenate((np.array([0, np.exp(-1j * w0 / fs)]),
+                                 np.zeros(N - 3),
+                                 np.array([np.exp(-1j * w0 / fs * (N - 1))])),
+                                axis=0)
+    a2_c = a2_r.conj().T  # transpose and conj
+    A2 = scipy.linalg.toeplitz(a2_c, a2_r)
+
+    # Space-Time adjacency
+    A = np.kron(A2, A1)
+
+    Ar = torch.tensor(np.real(A), dtype=torch.float)
+    Ai = torch.tensor(np.imag(A), dtype=torch.float)
+    return A, Ar, Ai
 
 
 def laplacian_doa():
@@ -83,32 +101,16 @@ def laplacian_doa():
 
     SNR_vec = np.array([-15, float("inf")])  # [dB]
     plt.figure()
-    for SNR_idx, SNR in enumerate(SNR_vec):
+    for SNR_idx, snr in enumerate(SNR_vec):
         # Signal
-        sig = Signal(theta_d, SNR)
-        x_noiseless = sig.x_noiseless
-        x = sig.x
+        x_noiseless = get_noiseless_signal(theta_d)
+        awgn = gen_awgn(snr)
+        x = x_noiseless + awgn
         print('SNR = {0:.2f}'.format(signaltonoise(abs(x))))
         for th_idx, est_theta in enumerate(est_theta_vec):
 
             # Adjacency matrix
-            est_tau = delta * np.cos(est_theta * np.pi / 180) * fs / c  # [samples]
-
-            a1_r = 0.5 * np.concatenate((np.array([0, np.exp(1j * w0 / fs * est_tau)]),
-                                         np.zeros(M - 3),
-                                         np.array([np.exp(1j * w0 / fs * (M - 1) * est_tau)])),
-                                        axis=0)
-            a1_c = a1_r.conj().T  # transpose and conj
-            A1 = scipy.linalg.toeplitz(a1_c, a1_r)
-
-            a2_r = 0.5 * np.concatenate((np.array([0, np.exp(-1j * w0 / fs)]),
-                                         np.zeros(N - 3),
-                                         np.array([np.exp(-1j * w0 / fs * (N - 1))])),
-                                        axis=0)
-            a2_c = a2_r.conj().T  # transpose and conj
-            A2 = scipy.linalg.toeplitz(a2_c, a2_r)
-
-            A = np.kron(A2, A1)
+            A, Ar, Ai = get_adjacency(est_theta)
 
             if est_theta == theta_d:
                 assert (np.linalg.norm(1 * x_noiseless - np.matmul(A, x_noiseless)) < 1e-9)
@@ -130,7 +132,6 @@ def laplacian_doa():
             i_eig = np.argwhere(abs(llambda - 1) < 1e-10).ravel()
             i_eig = i_eig[0]
 
-
             x_hat = np.matmul(V.conj().T, x)
             # % figure; stem(abs(x_hat))
             x_hat_normed = x_hat / abs(x_hat[i_eig])
@@ -139,7 +140,7 @@ def laplacian_doa():
         piquancy = piquancy / max(piquancy)
 
         plt.axvline(x=theta_d, color='r')
-        plt.plot(piquancy, label='SNR = ' + str(SNR) + ' [dB]', linewidth=2)
+        plt.plot(piquancy, label='SNR = ' + str(snr) + ' [dB]', linewidth=2)
         plt.xlabel(r'$\theta$')
         plt.ylabel(r'$\xi(\theta)$')
     plt.legend(loc='upper right')
@@ -148,23 +149,35 @@ def laplacian_doa():
     plt.ylim(0, 1)
 
 
-def plot_random_signals(data_loader):
-    (xr_batch, xi_batch), y_batch = iter(data_loader).next()
+def plot_random_signal(signals, label, snr):
+    idx = np.intersect1d(np.argwhere(signals['label'] == label), np.where(signals['snr'] > snr))
+    assert len(idx) > 0, 'w00t?'
+    if len(idx) > 1:
+        idx = idx[0]
 
-    xr_theta_d = xr_batch[y_batch == 1, :]
-    xi_theta_d = xi_batch[y_batch == 1, :]
+    xr = np.real(signals['x'][idx])
+    xi = np.imag(signals['x'][idx])
+    x = signals['x'][idx]
 
+    # split data to sensors
+    x1 = x[0:N]
+    xM = x[(M - 1) * N:M * N]
+
+    # fft
+    x1_h = np.abs(np.fft.fft(x1))/N
+    xM_h = np.abs(np.fft.fft(xM))/N
+    snr = signals['snr'][idx]
+    theta = signals['theta'][idx]
+
+    # Frequency axis
+    f = 1e-3*(fs/2)/N * n
+
+    # Plot
     plt.figure()
-    plt.title(fr'Signal from theta_d')
-    plt.plot(xr_theta_d[0, 0:N - 1].numpy(), label='Re{x(n)}')
-    plt.plot(xi_theta_d[0, 0:N - 1].numpy(), label='Im{x(n)}')
+    plt.title(fr'Signal from $\theta = {theta:.1f}$' + '\n' + f'with SNR = ${snr:.2f}$ [dB]')
+    plt.plot(xr[0:N - 1], label='Re{x(n)}')
+    plt.plot(xi[0:N - 1], label='Im{x(n)}')
+    # plt.plot(f, x1_h, label=r'$|\hat{x}_1(f)|$')
+    # plt.plot(f, xM_h, label=r'$|\hat{x}_M(f)|$')
     plt.legend()
-
-    xr_rand_theta = xr_batch[y_batch == 0, :]
-    xi_rand_theta = xi_batch[y_batch == 0, :]
-
-    plt.figure()
-    plt.title(fr'Signal not from theta_d')
-    plt.plot(xr_rand_theta[0, 0:N - 1].numpy(), label='Re{x(n)}')
-    plt.plot(xi_rand_theta[0, 0:N - 1].numpy(), label='Im{x(n)}')
-    plt.legend()
+    plt.show()

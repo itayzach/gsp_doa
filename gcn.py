@@ -9,22 +9,27 @@ from complexFunctions import complex_relu
 import matplotlib.pyplot as plt
 import networkx as nx
 from parameters import M, N, theta_d, delta, fs, c, w0, plots_dir
-from gsp import generate_synthetic_data
+from gsp import generate_synthetic_data, get_adjacency
 
 
 class GraphSignalsDataset(torch.utils.data.Dataset):
     def __init__(self, K):
-        Xr, Xi, labels = generate_synthetic_data(K)
+        signals = generate_synthetic_data(K)
+
         self.K = K
-        self.Xr = Xr
-        self.Xi = Xi
-        self.labels = labels
+        self.Xr = torch.tensor(np.real(signals['x']), dtype=torch.float)
+        self.Xi = torch.tensor(np.imag(signals['x']), dtype=torch.float)
+        self.label = torch.tensor(signals['label'], dtype=torch.long)
+        self.signals = signals
 
     def __len__(self):
         return self.K
 
     def __getitem__(self, index):
-        return (self.Xr[index, :], self.Xi[index, :]), self.labels[index]
+        return (self.Xr[index, :], self.Xi[index, :]), self.label[index]
+
+    def get_signals(self):
+        return self.signals
 
 
 class GraphNet(nn.Module):
@@ -33,38 +38,9 @@ class GraphNet(nn.Module):
         self.fc = ComplexLinear(N*M, 2)
 
         # precompute adjacency matrix before training
-        # A = self.precompute_adjacency_images(img_size)
-        Ar, Ai = self.get_adjacency()
+        A, Ar, Ai = get_adjacency(theta=theta_d)
         self.register_buffer('Ar', Ar)
         self.register_buffer('Ai', Ai)
-
-    @staticmethod
-    def get_adjacency():
-        # Space-domain adjacency
-        tau_d = delta * np.cos(theta_d * np.pi / 180) * fs / c  # [samples]
-        a1_r = 0.5 * np.concatenate((np.array([0, np.exp(1j * w0 / fs * tau_d)]),
-                                     np.zeros(M - 3),
-                                     np.array([np.exp(1j * w0 / fs * (M - 1) * tau_d)])),
-                                    axis=0)
-        a1_c = a1_r.conj().T  # transpose and conj
-        A1 = scipy.linalg.toeplitz(a1_c, a1_r)
-
-        # Time-domain adjacency
-        a2_r = 0.5 * np.concatenate((np.array([0, np.exp(-1j * w0 / fs)]),
-                                     np.zeros(N - 3),
-                                     np.array([np.exp(-1j * w0 / fs * (N - 1))])),
-                                    axis=0)
-        a2_c = a2_r.conj().T  # transpose and conj
-        A2 = scipy.linalg.toeplitz(a2_c, a2_r)
-
-        # Space-Time adjacency
-        A = np.kron(A2, A1)
-
-        print(A[:10, :10])
-
-        Ar = torch.tensor(np.real(A), dtype=torch.float)
-        Ai = torch.tensor(np.imag(A), dtype=torch.float)
-        return Ar, Ai
 
     def forward(self, xr, xi):
         # Batch size
@@ -72,7 +48,6 @@ class GraphNet(nn.Module):
 
         # AXr = Ar.mm(Xr) - Ai.mm(Xi)
         # AXi = Ar.mm(Xi) + Ai.mm(Xr)
-
         avg_neighbor_features_r = (torch.bmm(self.Ar.unsqueeze(0).expand(B, -1, -1), xr.view(B, -1, 1)).view(B, -1)) - \
                                   (torch.bmm(self.Ai.unsqueeze(0).expand(B, -1, -1), xi.view(B, -1, 1)).view(B, -1))
         avg_neighbor_features_i = (torch.bmm(self.Ar.unsqueeze(0).expand(B, -1, -1), xi.view(B, -1, 1)).view(B, -1)) + \
@@ -102,3 +77,56 @@ def signal_to_noise(a, axis=0, ddof=0):
     m = a.mean(axis)
     sd = a.std(axis=axis, ddof=ddof)
     return np.where(sd == 0, 0, m / sd)
+
+
+####################################################################################################################
+# different model
+####################################################################################################################
+class GNN(nn.Module):
+    def __init__(self, L, in_features, hidden_dim, out_features, max_deg):
+        super(GNN, self).__init__()
+        self.gcn_layer1 = GCNLayer(L, in_features, hidden_dim, max_deg)
+        self.gcn_layer2 = GCNLayer(L, hidden_dim, out_features, max_deg)
+
+    def forward(self, xr, xi):
+        xr, xi = self.gcn_layer1(xr, xi)
+        xr, xi = self.gcn_layer2(xr, xi)
+        x = torch.sqrt(torch.pow(xr, 2) + torch.pow(xi, 2))
+        return F.log_softmax(x, dim=1)
+
+
+class GCNLayer(nn.Module):
+    def __init__(self, graph_L, in_features, out_features, max_deg=1):
+        super(GCNLayer, self).__init__()
+        self.fc_layers = []
+        for i in range(max_deg):
+            fc = ComplexLinear(in_features, out_features)
+            self.add_module(f'fc_{i}', fc)
+            self.fc_layers.append(fc)
+
+        self.laplacians = self.calc_laplacian_functions(graph_L, max_deg)
+
+    @staticmethod
+    def calc_laplacian_functions(L, max_deg):
+        res = [L]
+        for _ in range(max_deg - 1):
+            res.append(np.matmul(res[-1], L))
+        return res
+
+    def forward(self, Xr, Xi):
+        Zr = torch.tensor(0., dtype=torch.float)
+        Zi = torch.tensor(0., dtype=torch.float)
+        for k, fc in enumerate(self.fc_layers):
+            L = self.laplacians[k]
+            Lr = torch.tensor(np.real(L), dtype=torch.float)
+            Li = torch.tensor(np.imag(L), dtype=torch.float)
+
+            XLr = Xr.mm(Lr) - Xi.mm(Li)
+            XLi = Xr.mm(Li) + Xi.mm(Lr)
+
+            fc_r, fc_i = fc(XLr, XLi)
+            Zr = fc_r + Zr
+            Zi = fc_i + Zi
+
+        Zr, Zi = complex_relu(Zr, Zi)
+        return Zr, Zi

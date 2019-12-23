@@ -5,7 +5,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 import numpy as np
 import matplotlib.pyplot as plt
-from gsp import laplacian_doa, plot_random_signals
+from gsp import laplacian_doa, plot_random_signal
 from gcn import GraphNet, GraphSignalsDataset, plot_accuracy
 from parameters import plots_dir
 from utils import mkdir_p
@@ -76,13 +76,33 @@ def main():
     device = torch.device("cuda" if use_cuda else "cpu")
 
     kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
+    train_set = GraphSignalsDataset(K=1000)
     train_loader = torch.utils.data.DataLoader(
-        GraphSignalsDataset(K=1000),
+        train_set,
         batch_size=args.batch_size, shuffle=True, **kwargs)
 
+    test_set = GraphSignalsDataset(K=300)
     test_loader = torch.utils.data.DataLoader(
-        GraphSignalsDataset(K=300),
+        test_set,
         batch_size=args.test_batch_size, shuffle=True, **kwargs)
+
+    ####################################################################################################################
+    # prev network
+    ####################################################################################################################
+    # in_features, out_features = L.shape[1], 2  # number of graph nodes, number of classes (theta_d, not theta_d)
+    # # graph_L = torch.tensor(L, dtype=torch.float)
+    # max_deg = 2
+    # hidden_dim = in_features
+    #
+    # # Stack two GCN layers as our model
+    # # gcn2 = nn.Sequential(
+    # #     GCNLayer(L, in_features, hidden_dim, max_deg),
+    # #     GCNLayer(L, hidden_dim, out_features, max_deg),
+    # #     ComplexToAbs(dim=1),
+    # #     nn.LogSoftmax(dim=1)
+    # # )
+    # gcn2 = GNN(L, in_features, hidden_dim, out_features, max_deg).to(device)
+    # print(gcn2)
 
     model = GraphNet().to(device)
     print(model)
@@ -96,7 +116,8 @@ def main():
     if args.plot_gsp_figs:
         laplacian_doa()
         plt.show()
-        plot_random_signals(train_loader)
+        plot_random_signal(train_set.get_signals(), label=True, snr=-100)
+        plot_random_signal(train_set.get_signals(), label=False, snr=-100)
         plt.show()
 
     for epoch in range(1, args.epochs + 1):
