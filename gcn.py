@@ -2,6 +2,7 @@ from __future__ import print_function
 import torch
 import torch.utils.data
 import torch.nn as nn
+import torch.nn.functional as F
 import numpy as np
 import scipy
 from complexLayers import ComplexLinear
@@ -35,7 +36,8 @@ class GraphSignalsDataset(torch.utils.data.Dataset):
 class GraphNet(nn.Module):
     def __init__(self):
         super(GraphNet, self).__init__()
-        self.fc = ComplexLinear(N*M, 2)
+        self.fc1 = ComplexLinear(N*M, 10)
+        self.fc2 = nn.Linear(10, 2)
 
         # precompute adjacency matrix before training
         A, Ar, Ai = get_adjacency(theta=theta_d)
@@ -52,9 +54,11 @@ class GraphNet(nn.Module):
                                   (torch.bmm(self.Ai.unsqueeze(0).expand(B, -1, -1), xi.view(B, -1, 1)).view(B, -1))
         avg_neighbor_features_i = (torch.bmm(self.Ar.unsqueeze(0).expand(B, -1, -1), xi.view(B, -1, 1)).view(B, -1)) + \
                                   (torch.bmm(self.Ai.unsqueeze(0).expand(B, -1, -1), xr.view(B, -1, 1)).view(B, -1))
-        xr, xi = self.fc(avg_neighbor_features_r, avg_neighbor_features_i)
-
+        xr, xi = self.fc1(avg_neighbor_features_r, avg_neighbor_features_i)
         x = torch.sqrt(torch.pow(xr, 2) + torch.pow(xi, 2))
+        x = F.relu(x)
+
+        x = self.fc2(x)
 
         return x
 

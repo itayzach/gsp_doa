@@ -76,12 +76,12 @@ def main():
     device = torch.device("cuda" if use_cuda else "cpu")
 
     kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
-    train_set = GraphSignalsDataset(K=1000)
+    train_set = GraphSignalsDataset(K=5000)
     train_loader = torch.utils.data.DataLoader(
         train_set,
         batch_size=args.batch_size, shuffle=True, **kwargs)
 
-    test_set = GraphSignalsDataset(K=300)
+    test_set = GraphSignalsDataset(K=1500)
     test_loader = torch.utils.data.DataLoader(
         test_set,
         batch_size=args.test_batch_size, shuffle=True, **kwargs)

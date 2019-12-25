@@ -48,8 +48,10 @@ def gen_awgn(snr):
 
 
 def generate_synthetic_data(K):
-    snr_vec = np.concatenate((np.linspace(start=-15, stop=100, num=int(K / 2)), np.linspace(start=-15, stop=100, num=int(K / 2))))
-    theta_vec = np.concatenate((theta_d*np.ones(int(K/2), dtype=float), np.random.uniform(0, 180, int(K/2))))
+    snr_vec = np.concatenate((np.linspace(start=-20, stop=20, num=int(K / 2)),
+                              np.linspace(start=-20, stop=20, num=int(K / 2))))
+    theta_vec = np.concatenate((theta_d*np.ones(int(K/2), dtype=float),
+                                np.random.uniform(0, 180, int(K/2))))
     noiseless_vec = np.empty([K, N*M], dtype=complex)
     x_vec = np.empty([K, N*M], dtype=complex)
     awgn_vec = np.empty([K, N*M], dtype=complex)
@@ -60,7 +62,7 @@ def generate_synthetic_data(K):
 
         awgn = gen_awgn(snr)
         x = x_noiseless + awgn
-        label = theta == theta_d
+        label = abs(theta - theta_d) < 0.5
 
         # append
         noiseless_vec[snr_idx, :] = x_noiseless
@@ -190,7 +192,9 @@ def plot_random_signal(signals, label, snr):
 
     # Plot
     fig, (ax1, ax2) = plt.subplots(2)
-    ax1.set_title(fr'Signal from $\theta = {theta:.1f}^\circ$' + '\n' + f'with SNR = ${snr:.2f}$ [dB]')
+    ax1.set_title(fr'Signal from $\theta = {theta:.1f}^\circ$' + '\n' +
+                  f'with SNR = ${snr:.2f}$ [dB]' + '\n' +
+                  f'label = {label}')
     ax1.plot(xr1, label='Re{x(n)}')
     ax1.plot(xi1, label='Im{x(n)}')
     ax1.set_xlabel('n [sample]')
