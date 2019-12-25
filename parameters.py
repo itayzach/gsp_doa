@@ -13,5 +13,7 @@ delta = 0.1            # uniform spacing between sensors [m]
 c = 340                # speed of sound [m / s]
 
 theta_d = 70.3  # [degrees]
+# In order to ensure signal is labeled False if theta is more than theta_threshold degrees farther than theta_d:
+theta_threshold = 0.5  # [degrees]
 
 plots_dir = 'gsp_doa/plots'

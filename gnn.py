@@ -14,17 +14,22 @@ from gsp import generate_synthetic_data, get_adjacency
 
 
 class GraphSignalsDataset(torch.utils.data.Dataset):
-    def __init__(self, K):
-        signals = generate_synthetic_data(K)
+    def __init__(self, num_true_points_per_snr, num_false_points_per_snr, snr_vec):
+        signals = generate_synthetic_data(num_true_points_per_snr, num_false_points_per_snr, snr_vec)
 
-        self.K = K
+        self.total_num_true_points = snr_vec.size * num_true_points_per_snr
+        self.total_num_false_points = snr_vec.size * num_false_points_per_snr
+        self.num_true_points_per_snr = num_true_points_per_snr
+        self.num_false_points_per_snr = num_false_points_per_snr
+        self.snr_vec = snr_vec
         self.Xr = torch.tensor(np.real(signals['x']), dtype=torch.float)
         self.Xi = torch.tensor(np.imag(signals['x']), dtype=torch.float)
         self.label = torch.tensor(signals['label'], dtype=torch.long)
         self.signals = signals
+        assert self.total_num_true_points + self.total_num_false_points == len(self.label)
 
     def __len__(self):
-        return self.K
+        return self.total_num_true_points + self.total_num_false_points
 
     def __getitem__(self, index):
         return (self.Xr[index, :], self.Xi[index, :]), self.label[index]
@@ -74,6 +79,7 @@ def plot_accuracy(args, train_acc_vec, test_acc_vec):
     plt.xlim(0, args.epochs)
     plt.ylim(0, 100)
     fig.savefig(plots_dir + '/accuracy.png', dpi=200)
+    plt.show()
 
 
 def signal_to_noise(a, axis=0, ddof=0):
@@ -82,6 +88,31 @@ def signal_to_noise(a, axis=0, ddof=0):
     sd = a.std(axis=axis, ddof=ddof)
     return np.where(sd == 0, 0, m / sd)
 
+
+def gnn_doa(model, test_set):
+    model.eval()
+
+    snr_vec = test_set.signals['snr']
+    correct_vec = np.zeros(snr_vec.size)
+
+    data_r = test_set.Xr
+    data_i = test_set.Xi
+    output = model(data_r, data_i)
+    est_labels_vec = output.argmax(dim=1, keepdim=True)
+
+    for k in range(test_set.__len__()):
+        snr = test_set.signals['snr_rep'][k]
+        ground_truth_label = test_set.signals['label'][k]
+        ground_truth_theta = test_set.signals['theta'][k]
+        if ground_truth_label == 0:
+            break
+        snr_idx = np.argwhere(snr_vec == snr)
+        est_label = est_labels_vec[k].item()
+        correct_vec[snr_idx] += ground_truth_label == est_label
+
+    accuracy_vs_snr = 100.0*correct_vec/test_set.num_true_points_per_snr
+
+    return est_labels_vec, accuracy_vs_snr
 
 ####################################################################################################################
 # different model

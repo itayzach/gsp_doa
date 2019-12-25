@@ -4,7 +4,7 @@ import numpy as np
 import numpy.matlib
 import scipy
 import matplotlib.pyplot as plt
-from parameters import M, N, theta_d, delta, fs, c, w0, m, n, Amp
+from parameters import M, N, theta_d, theta_threshold, delta, fs, c, w0, m, n, Amp
 
 
 def signaltonoise(a, axis=0, ddof=0):
@@ -47,22 +47,37 @@ def gen_awgn(snr):
     return awgn
 
 
-def generate_synthetic_data(K):
-    snr_vec = np.concatenate((np.linspace(start=-20, stop=20, num=int(K / 2)),
-                              np.linspace(start=-20, stop=20, num=int(K / 2))))
-    theta_vec = np.concatenate((theta_d*np.ones(int(K/2), dtype=float),
-                                np.random.uniform(0, 180, int(K/2))))
+def gen_not_theta_d_values(total_num_false_points):
+    false_points = np.random.uniform(0, 180, total_num_false_points)
+    forbidden_idx = np.argwhere(abs(false_points - theta_d) < theta_threshold).squeeze()
+    while forbidden_idx.size > 0:
+        false_points[forbidden_idx] = np.random.uniform(0, 180, forbidden_idx.size)
+        forbidden_idx = np.argwhere(abs(false_points - theta_d) < theta_threshold).squeeze()
+    return false_points
+
+
+def generate_synthetic_data(num_true_points_per_snr, num_false_points_per_snr, snr_vec):
+    total_num_true_points = snr_vec.size*num_true_points_per_snr
+    total_num_false_points = snr_vec.size * num_false_points_per_snr
+    K = total_num_true_points + total_num_false_points
+
+    snr_rep_vec = np.concatenate((np.repeat(snr_vec, num_true_points_per_snr),
+                                  np.repeat(snr_vec, num_false_points_per_snr)))
+
+    not_theta_d_values = gen_not_theta_d_values(total_num_false_points)
+    theta_vec = np.concatenate((theta_d*np.ones(total_num_true_points, dtype=float),
+                                not_theta_d_values))
     noiseless_vec = np.empty([K, N*M], dtype=complex)
     x_vec = np.empty([K, N*M], dtype=complex)
     awgn_vec = np.empty([K, N*M], dtype=complex)
     labels_vec = np.empty(K, dtype=np.long)
-    for snr_idx, snr in enumerate(snr_vec):
+    for snr_idx, snr in enumerate(snr_rep_vec):
         theta = theta_vec[snr_idx]
         x_noiseless = get_noiseless_signal(theta)
 
         awgn = gen_awgn(snr)
         x = x_noiseless + awgn
-        label = abs(theta - theta_d) < 0.5
+        label = abs(theta - theta_d) < theta_threshold
 
         # append
         noiseless_vec[snr_idx, :] = x_noiseless
@@ -72,6 +87,7 @@ def generate_synthetic_data(K):
 
     signals = {
         'snr': snr_vec,
+        'snr_rep': snr_rep_vec,
         'theta': theta_vec,
         'x_noiseless': noiseless_vec,
         'awgn': awgn_vec,
@@ -108,64 +124,101 @@ def get_adjacency(theta):
     return A, Ar, Ai
 
 
-def laplacian_doa():
-    est_theta_vec = np.arange(0, 180)
-    piquancy = np.zeros(len(est_theta_vec))
+def gsp_doa(test_set):
+    theta_axis = np.arange(0, 180)
+    piquancy = np.zeros(len(theta_axis))
+    num_points_per_snr = test_set.num_true_points_per_snr + test_set.num_false_points_per_snr
 
-    SNR_vec = np.array([-15, float("inf")])  # [dB]
-    plt.figure()
-    for SNR_idx, snr in enumerate(SNR_vec):
+    # SNR_vec = np.array([-15, float("inf")])  # [dB]
+    # plt.figure()
+
+    K = test_set.__len__()
+    est_theta_vec = np.empty(K, dtype=np.long)
+    est_labels_vec = np.empty(K, dtype=np.long)
+    snr_vec = test_set.signals['snr']
+    correct_vec = np.zeros(snr_vec.size, dtype=int)
+
+    V_vec = []
+    i_eig_vec = []
+    for th_idx, theta in enumerate(theta_axis):
+        # Adjacency matrix
+        A, Ar, Ai = get_adjacency(theta)
+
+        # Degree matrix
+        dii = np.sum(A, axis=1, keepdims=False)
+        D = np.diag(dii)
+        # Laplacian
+        L = D - A
+        w, Phi = np.linalg.eigh(L)
+
+        # Plot spectrum
+        if theta == theta_d:
+            plt.figure()
+            plt.plot(w)
+            plt.xlabel(r'$\lambda$')
+
+        llambda, V = np.linalg.eigh(A)
+        i_eig = np.argwhere(abs(llambda - 1) < 1e-10).ravel()
+        i_eig = i_eig[0]
+
+        V_vec.append(V)
+        i_eig_vec.append(i_eig)
+
+    print('Finished creating adjacency matrices...')
+    for k in range(K):
         # Signal
-        x_noiseless = get_noiseless_signal(theta_d)
-        awgn = gen_awgn(snr)
-        x = x_noiseless + awgn
-        print('SNR = {0:.2f}'.format(signaltonoise(abs(x))))
-        for th_idx, est_theta in enumerate(est_theta_vec):
-
-            # Adjacency matrix
-            A, Ar, Ai = get_adjacency(est_theta)
-
-            if est_theta == theta_d and snr == float("inf"):
-                Ax = np.matmul(A, x_noiseless)
-                assert (np.linalg.norm(1 * x_noiseless - Ax) < 1e-9)
-
-            # Degree matrix
-            dii = np.sum(A, axis=1, keepdims=False)
-            D = np.diag(dii)
-            # Laplacian
-            L = D - A
-            w, Phi = np.linalg.eigh(L)
-
-            # Plot spectrum
-            if est_theta == theta_d:
-                plt.figure()
-                plt.plot(w)
-                plt.xlabel(r'$\lambda$')
-
-            llambda, V = np.linalg.eigh(A)
-            i_eig = np.argwhere(abs(llambda - 1) < 1e-10).ravel()
-            i_eig = i_eig[0]
-
+        x_noiseless = test_set.signals['x_noiseless'][k]
+        snr = test_set.signals['snr_rep'][k]
+        ground_truth_label = test_set.signals['label'][k]
+        ground_truth_theta = test_set.signals['theta'][k]
+        # awgn = gen_awgn(snr)
+        x = test_set.signals['x'][k]
+        # print('SNR = {0:.2f}'.format(signaltonoise(abs(x))))
+        for th_idx, theta in enumerate(theta_axis):
+            V = V_vec[th_idx]
+            i_eig = i_eig_vec[th_idx]
             x_hat = np.matmul(V.conj().T, x)
-            # % figure; stem(abs(x_hat))
             x_hat_normed = x_hat / abs(x_hat[i_eig])
             x_hat_ = np.delete(x_hat_normed, i_eig)
             piquancy[th_idx] = 1 / np.sqrt(sum(abs(x_hat_) ** 2))
         piquancy = piquancy / max(piquancy)
+        est_theta = np.argmax(piquancy)
+        est_theta_vec[k] = est_theta
+        est_label = abs(est_theta - theta_d) < theta_threshold
+        est_labels_vec[k] = est_label
+        snr_idx = np.argwhere(snr_vec == snr)
+        correct_vec[snr_idx] += ground_truth_label == est_label
 
-        plt.axvline(x=theta_d, color='r')
-        plt.plot(piquancy, label='SNR = ' + str(snr) + ' [dB]', linewidth=2)
-        plt.xlabel(r'$\theta$')
-        plt.ylabel(r'$\xi(\theta)$')
-    plt.legend(loc='upper right')
-    plt.xticks(np.arange(0, 180, step=20))
-    plt.xlim(est_theta_vec[0], est_theta_vec[-1])
-    plt.ylim(0, 1)
-    plt.show()
+        if ground_truth_label == 1:
+            curr_points_per_snr = test_set.num_true_points_per_snr
+        else:
+            assert ground_truth_label == 0  # just making sure...
+            curr_points_per_snr = test_set.num_false_points_per_snr
+            break
+
+        if k % curr_points_per_snr == curr_points_per_snr - 1:
+            curr_acc = 100. * correct_vec[snr_idx].item() / test_set.num_true_points_per_snr
+            print(f'label = {ground_truth_label} | SNR = {snr} | ' +
+                  f'accuracy = {correct_vec[snr_idx].item()}/{test_set.num_true_points_per_snr} ({curr_acc:.2f}%) | ' +
+                  f'progress = {k}/{K} ({100. * k / K:.2f}%)')
+
+        # plt.axvline(x=theta_d, color='r')
+        # plt.plot(piquancy, label='SNR = ' + str(snr) + ' [dB]', linewidth=2)
+        # plt.xlabel(r'$\theta$')
+        # plt.ylabel(r'$\xi(\theta)$')
+    # plt.legend(loc='upper right')
+    # plt.xticks(np.arange(0, 180, step=20))
+    # plt.xlim(theta_axis[0], theta_axis[-1])
+    # plt.ylim(0, 1)
+    # plt.show()
+
+    accuracy_vs_snr = 100.0*correct_vec/test_set.num_true_points_per_snr
+
+    return est_theta_vec, est_labels_vec, accuracy_vs_snr
 
 
 def plot_random_signal(signals, label, snr):
-    idx = np.intersect1d(np.argwhere(signals['label'] == label), np.where(signals['snr'] > snr))
+    idx = np.intersect1d(np.argwhere(signals['label'] == label), np.where(signals['snr_rep'] > snr))
     assert len(idx) > 0, 'w00t?'
     if len(idx) > 1:
         idx = idx[0]
@@ -187,7 +240,7 @@ def plot_random_signal(signals, label, snr):
     f_kHz = f_Hz / 1e3            # just in kHz
 
     x1_hat = np.fft.fftshift(np.fft.fft(x1, L))/L
-    snr = signals['snr'][idx]
+    snr = signals['snr_rep'][idx]
     theta = signals['theta'][idx]
 
     # Plot
