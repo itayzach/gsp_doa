@@ -136,10 +136,12 @@ def gsp_doa(test_set):
     est_theta_vec = np.empty(K, dtype=np.long)
     est_labels_vec = np.empty(K, dtype=np.long)
     snr_vec = test_set.signals['snr']
-    correct_vec = np.zeros(snr_vec.size, dtype=int)
+    true_correct_vec = np.zeros(snr_vec.size, dtype=int)
+    false_correct_vec = np.zeros(snr_vec.size, dtype=int)
 
     V_vec = []
     i_eig_vec = []
+    print('Creating adjacency matrices...')
     for th_idx, theta in enumerate(theta_axis):
         # Adjacency matrix
         A, Ar, Ai = get_adjacency(theta)
@@ -164,7 +166,7 @@ def gsp_doa(test_set):
         V_vec.append(V)
         i_eig_vec.append(i_eig)
 
-    print('Finished creating adjacency matrices...')
+    print('Testing labels...')
     for k in range(K):
         # Signal
         x_noiseless = test_set.signals['x_noiseless'][k]
@@ -187,19 +189,21 @@ def gsp_doa(test_set):
         est_label = abs(est_theta - theta_d) < theta_threshold
         est_labels_vec[k] = est_label
         snr_idx = np.argwhere(snr_vec == snr)
-        correct_vec[snr_idx] += ground_truth_label == est_label
 
         if ground_truth_label == 1:
             curr_points_per_snr = test_set.num_true_points_per_snr
+            true_correct_vec[snr_idx] += ground_truth_label == est_label
+            curr_correct_vec = true_correct_vec
         else:
             assert ground_truth_label == 0  # just making sure...
             curr_points_per_snr = test_set.num_false_points_per_snr
-            break
+            false_correct_vec[snr_idx] += ground_truth_label == est_label
+            curr_correct_vec = false_correct_vec
 
         if k % curr_points_per_snr == curr_points_per_snr - 1:
-            curr_acc = 100. * correct_vec[snr_idx].item() / test_set.num_true_points_per_snr
+            curr_acc = 100. * curr_correct_vec[snr_idx].item() / curr_points_per_snr
             print(f'label = {ground_truth_label} | SNR = {snr} | ' +
-                  f'accuracy = {correct_vec[snr_idx].item()}/{test_set.num_true_points_per_snr} ({curr_acc:.2f}%) | ' +
+                  f'accuracy = {curr_correct_vec[snr_idx].item()}/{curr_points_per_snr} ({curr_acc:.2f}%) | ' +
                   f'progress = {k}/{K} ({100. * k / K:.2f}%)')
 
         # plt.axvline(x=theta_d, color='r')
@@ -212,9 +216,10 @@ def gsp_doa(test_set):
     # plt.ylim(0, 1)
     # plt.show()
 
-    accuracy_vs_snr = 100.0*correct_vec/test_set.num_true_points_per_snr
+    true_accuracy_vs_snr = 100.0 * true_correct_vec / test_set.num_true_points_per_snr
+    false_accuracy_vs_snr = 100.0 * false_correct_vec / test_set.num_false_points_per_snr
 
-    return est_theta_vec, est_labels_vec, accuracy_vs_snr
+    return est_theta_vec, est_labels_vec, true_accuracy_vs_snr, false_accuracy_vs_snr
 
 
 def plot_random_signal(signals, label, snr):
