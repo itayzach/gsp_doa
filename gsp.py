@@ -4,7 +4,7 @@ import numpy as np
 import numpy.matlib
 import scipy
 import matplotlib.pyplot as plt
-from parameters import M, N, theta_d, theta_threshold, delta, fs, c, w0, m, n, Amp
+from parameters import M, N, theta_d, theta_threshold, delta, fs, c, w0, m, n, Amp, f0, delta_over_lambda
 
 
 def signaltonoise(a, axis=0, ddof=0):
@@ -57,6 +57,12 @@ def gen_not_theta_d_values(total_num_false_points):
 
 
 def generate_synthetic_data(num_true_points_per_snr, num_false_points_per_snr, snr_vec):
+    if delta > c/(2*f0):
+        sign = '>'
+    else:
+        sign = '<'
+    print(f'{delta} = delta ' + sign + f' lambda/2 = {c}/2x{f0/1e3}k = {c/(2*f0)}')
+
     total_num_true_points = snr_vec.size*num_true_points_per_snr
     total_num_false_points = snr_vec.size * num_false_points_per_snr
     K = total_num_true_points + total_num_false_points
@@ -125,7 +131,7 @@ def get_adjacency(theta):
 
 
 def gsp_doa(test_set):
-    theta_axis = np.arange(0, 180)
+    theta_axis = np.linspace(start=0, stop=180, num=181*4)
     piquancy = np.zeros(len(theta_axis))
     num_points_per_snr = test_set.num_true_points_per_snr + test_set.num_false_points_per_snr
 
@@ -146,18 +152,18 @@ def gsp_doa(test_set):
         # Adjacency matrix
         A, Ar, Ai = get_adjacency(theta)
 
-        # Degree matrix
-        dii = np.sum(A, axis=1, keepdims=False)
-        D = np.diag(dii)
-        # Laplacian
-        L = D - A
-        w, Phi = np.linalg.eigh(L)
-
-        # Plot spectrum
-        if theta == theta_d:
-            plt.figure()
-            plt.plot(w)
-            plt.xlabel(r'$\lambda$')
+        # # Degree matrix
+        # dii = np.sum(A, axis=1, keepdims=False)
+        # D = np.diag(dii)
+        # # Laplacian
+        # L = D - A
+        # w, Phi = np.linalg.eigh(L)
+        #
+        # # Plot spectrum
+        # if theta == theta_d:
+        #     plt.figure()
+        #     plt.plot(w)
+        #     plt.xlabel(r'$\lambda$')
 
         llambda, V = np.linalg.eigh(A)
         i_eig = np.argwhere(abs(llambda - 1) < 1e-10).ravel()
@@ -184,7 +190,8 @@ def gsp_doa(test_set):
             x_hat_ = np.delete(x_hat_normed, i_eig)
             piquancy[th_idx] = 1 / np.sqrt(sum(abs(x_hat_) ** 2))
         piquancy = piquancy / max(piquancy)
-        est_theta = np.argmax(piquancy)
+        est_theta_idx = np.argmax(piquancy)
+        est_theta = theta_axis[est_theta_idx]
         est_theta_vec[k] = est_theta
         est_label = abs(est_theta - theta_d) < theta_threshold
         est_labels_vec[k] = est_label
@@ -223,7 +230,7 @@ def gsp_doa(test_set):
 
 
 def plot_random_signal(signals, label, snr):
-    idx = np.intersect1d(np.argwhere(signals['label'] == label), np.where(signals['snr_rep'] > snr))
+    idx = np.intersect1d(np.argwhere(signals['label'] == label), np.where(signals['snr_rep'] >= snr))
     assert len(idx) > 0, 'w00t?'
     if len(idx) > 1:
         idx = idx[0]
@@ -233,10 +240,14 @@ def plot_random_signal(signals, label, snr):
     xi = np.imag(x)
 
     # split data to sensors
-    indexes = np.arange(start=0, stop=N * M, step=M)
-    x1 = x[indexes]
-    xr1 = xr[indexes]
-    xi1 = xi[indexes]
+    indexes_1 = np.arange(start=0, stop=N * M, step=M)
+    x1 = x[indexes_1]
+    xr1 = xr[indexes_1]
+    xi1 = xi[indexes_1]
+    indexes_2 = np.arange(start=1, stop=N * M + 1, step=M)
+    x2 = x[indexes_2]
+    xr2 = xr[indexes_2]
+    xi2 = xi[indexes_2]
 
     # fft
     L = 2 ** np.ceil(np.log2(N))  # nextpow2
@@ -245,19 +256,35 @@ def plot_random_signal(signals, label, snr):
     f_kHz = f_Hz / 1e3            # just in kHz
 
     x1_hat = np.fft.fftshift(np.fft.fft(x1, L))/L
+    x2_hat = np.fft.fftshift(np.fft.fft(x2, L)) / L
+
     snr = signals['snr_rep'][idx]
     theta = signals['theta'][idx]
 
     # Plot
-    fig, (ax1, ax2) = plt.subplots(2)
-    ax1.set_title(fr'Signal from $\theta = {theta:.1f}^\circ$' + '\n' +
-                  f'with SNR = ${snr:.2f}$ [dB]' + '\n' +
-                  f'label = {label}')
-    ax1.plot(xr1, label='Re{x(n)}')
-    ax1.plot(xi1, label='Im{x(n)}')
-    ax1.set_xlabel('n [sample]')
-    ax1.legend()
-    ax2.stem(f_kHz, np.abs(x1_hat), label=r'$|\hat{x}_1(f)|$')
-    ax2.set_xlabel('f [kHz]')
-    ax2.legend()
+    fig, ax = plt.subplots(2, 2, gridspec_kw={'hspace': 0, 'wspace': 0}, figsize=(10,5))
+    fig.subplots_adjust(top=0.5)
+
+    ax[0, 0].plot(xr1, label=r'Re{x_1(n)}')
+    ax[0, 0].plot(xi1, label=r'Im{x_1(n)}')
+    # ax[0, 0].legend()
+
+    ax[1, 0].plot(xr2, label=r'Re{x_2(n)}')
+    ax[1, 0].plot(xi2, label=r'Im{x_2(n)}')
+    ax[1, 0].set_xlabel('n [sample]')
+    # ax[1, 0].legend()
+
+    ax[0, 1].stem(f_kHz, np.abs(x1_hat), label=r'$|\hat{x}_1(f)|$')
+    # ax[0, 1].legend()
+    ax[0, 1].yaxis.tick_right()
+
+    ax[1, 1].stem(f_kHz, np.abs(x2_hat), label=r'$|\hat{x}_2(f)|$')
+    ax[1, 1].set_xlabel('f [kHz]')
+    # ax[1, 1].legend()
+    ax[1, 1].yaxis.tick_right()
+
+    fig.suptitle(fr'Signals from $\theta = {theta:.1f}^\circ$' + f' (label = {label})' + '\n' +
+                 f'with SNR = ${snr:.2f}$ [dB]' + '\n' + fr'$\delta = {delta_over_lambda:.2f}\lambda$',
+                 y=0.98)
+
     plt.show()

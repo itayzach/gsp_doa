@@ -68,17 +68,19 @@ class GraphNet(nn.Module):
         return x
 
 
-def plot_accuracy(args, train_acc_vec, test_acc_vec):
+def plot_accuracy(args, model_name, train_acc_vec, test_acc_vec):
     fig = plt.figure()
-    plt.plot(max(test_acc_vec) * np.ones(len(test_acc_vec)), color='red', linestyle='dashed')
-    plt.plot(train_acc_vec, label='training acc', linewidth=2)
-    plt.plot(test_acc_vec, label=f'test acc ({max(test_acc_vec):.2f}%)', linewidth=2)
+    plt.plot(max(test_acc_vec) * np.ones(len(test_acc_vec)), linewidth=2, color='red', linestyle='dashed',
+             label=f'Max test: {max(test_acc_vec):.2f}%')
+    plt.plot(train_acc_vec, linewidth=2, label='Train')
+    plt.plot(test_acc_vec, linewidth=2, label=f'Test')
     plt.xlabel('Epoch')
     plt.ylabel('Accuracy [%]')
     plt.legend()
+    plt.title(model_name)
     plt.xlim(0, args.epochs)
-    plt.ylim(0, 100)
-    fig.savefig(plots_dir + '/accuracy.png', dpi=200)
+    plt.ylim(80, 100)
+    fig.savefig(plots_dir + '/' + model_name + '_accuracy.png', dpi=200)
     plt.show()
 
 
@@ -127,26 +129,26 @@ def gnn_doa(model, test_set):
 class GCN(nn.Module):
     def __init__(self):
         super(GCN, self).__init__()
-        max_deg = 2
+        max_deg = 1
         A, Ar, Ai = get_adjacency(theta=theta_d)
 
-        I = np.eye(A.shape[0])
-        A = A + I
-        dii = np.sum(A, axis=1, keepdims=False)
-        D = np.diag(dii)
+        I = np.eye(A.shape[0]) + 1j*np.eye(A.shape[0])
+        A_h = A + I
+        dii = np.sum(A_h, axis=1, keepdims=False)
+        # D = np.diag(dii)
         D_inv_h = np.diag(dii ** (-0.5))
         # Laplacian
         L = np.matmul(D_inv_h, np.matmul(A, D_inv_h))
+        # L = I
 
-        self.gcn_layer1 = GCNLayer(L, N*M, N*M, max_deg)
-        self.gcn_layer2 = GCNLayer(L, N*M, 10, max_deg)
-        self.fc1 = nn.Linear(10, 2)
+        self.gcn_layer1 = GCNLayer(L, N*M, 2, max_deg)
+        # self.fc1 = ComplexLinear(N*M, 2)
 
     def forward(self, xr, xi):
         xr, xi = self.gcn_layer1(xr, xi)
-        xr, xi = self.gcn_layer2(xr, xi)
+
+        xr, xi = complex_relu(xr, xi)
         x = torch.sqrt(torch.pow(xr, 2) + torch.pow(xi, 2))
-        x = self.fc1(x)
         return F.log_softmax(x, dim=1)
 
 
@@ -190,5 +192,21 @@ class GCNLayer(nn.Module):
             Zr = fc_r + Zr
             Zi = fc_i + Zi
 
-        Zr, Zi = complex_relu(Zr, Zi)
+        # Zr, Zi = complex_relu(Zr, Zi)
         return Zr, Zi
+
+
+####################################################################################################################
+# MLP
+####################################################################################################################
+class MLP(nn.Module):
+    def __init__(self):
+        super(MLP, self).__init__()
+        self.fc1 = ComplexLinear(N*M, 2)
+
+    def forward(self, xr, xi):
+        xr, xi = self.fc1(xr, xi)
+        xr, xi = complex_relu(xr, xi)
+        x = torch.sqrt(torch.pow(xr, 2) + torch.pow(xi, 2))
+
+        return F.log_softmax(x, dim=1)
