@@ -135,12 +135,12 @@ class GCN(nn.Module):
         A, Ar, Ai = get_adjacency(theta=theta_d)
 
         I = np.eye(A.shape[0]) + 1j*np.eye(A.shape[0])
-        A_h = A + I
-        dii = np.sum(A_h, axis=1, keepdims=False)
-        # D = np.diag(dii)
-        D_inv_h = np.diag(dii ** (-0.5))
+        A_h = A
+        dii = np.sum(np.abs(A_h), axis=1, keepdims=False)
+        D = np.diag(dii)
+        D_inv_h = np.diag(dii ** (-1))
         # Laplacian
-        L = np.matmul(D_inv_h, np.matmul(A, D_inv_h))
+        L = np.matmul(D_inv_h, np.matmul(A_h, D))
         # L = I
 
         self.gcn_layer1 = GCNLayer(L, N*M, 2, max_deg)

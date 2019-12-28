@@ -100,11 +100,11 @@ def main():
     device = torch.device("cuda" if use_cuda else "cpu")
     kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
 
-    snr_vec_train = np.arange(start=0, stop=10, step=3)
-    snr_vec_test = np.arange(start=0, stop=10, step=3)
+    snr_vec_train = np.arange(start=0, stop=15, step=3)
+    snr_vec_test = np.arange(start=-7, stop=15, step=3)
 
-    train_set = GraphSignalsDataset(num_true_points_per_snr=100,
-                                    num_false_points_per_snr=100,
+    train_set = GraphSignalsDataset(num_true_points_per_snr=10,
+                                    num_false_points_per_snr=10,
                                     snr_vec=snr_vec_train)
     train_loader = torch.utils.data.DataLoader(
         train_set,
@@ -128,12 +128,10 @@ def main():
     # Plot data samples
     ####################################################################################################################
     if args.plot_gsp_figs:
-        plot_random_signal(train_set.get_signals(), label=True, snr=10)
-        plot_random_signal(train_set.get_signals(), label=False, snr=10)
-        plot_random_signal(train_set.get_signals(), label=True, snr=5)
-        plot_random_signal(train_set.get_signals(), label=False, snr=5)
-        plot_random_signal(train_set.get_signals(), label=True, snr=-5)
-        plot_random_signal(train_set.get_signals(), label=False, snr=-5)
+        plot_random_signal(test_set.get_signals(), label=True, snr=14)
+        plot_random_signal(test_set.get_signals(), label=False, snr=14)
+        plot_random_signal(test_set.get_signals(), label=True, snr=5)
+        plot_random_signal(test_set.get_signals(), label=False, snr=5)
 
     ####################################################################################################################
     # Graph Signal Processing DOA
