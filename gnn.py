@@ -24,6 +24,8 @@ class GraphSignalsDataset(torch.utils.data.Dataset):
         self.snr_vec = snr_vec
         self.Xr = torch.tensor(np.real(signals['x']), dtype=torch.float)
         self.Xi = torch.tensor(np.imag(signals['x']), dtype=torch.float)
+        # self.Xr = torch.tensor(np.real(signals['x_hat']), dtype=torch.float)
+        # self.Xi = torch.tensor(np.imag(signals['x_hat']), dtype=torch.float)
         self.label = torch.tensor(signals['label'], dtype=torch.long)
         self.signals = signals
         assert self.total_num_true_points + self.total_num_false_points == len(self.label)

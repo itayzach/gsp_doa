@@ -74,9 +74,14 @@ def generate_synthetic_data(num_true_points_per_snr, num_false_points_per_snr, s
     theta_vec = np.concatenate((theta_d*np.ones(total_num_true_points, dtype=float),
                                 not_theta_d_values))
     noiseless_vec = np.empty([K, N*M], dtype=complex)
-    x_vec = np.empty([K, N*M], dtype=complex)
+    x_hat_vec = np.empty([K, N*M], dtype=complex)
+    x_vec = np.empty([K, N * M], dtype=complex)
     awgn_vec = np.empty([K, N*M], dtype=complex)
     labels_vec = np.empty(K, dtype=np.long)
+
+    A, Ar, Ai = get_adjacency(theta=theta_d)
+    llambda, V = np.linalg.eigh(A)
+
     for snr_idx, snr in enumerate(snr_rep_vec):
         theta = theta_vec[snr_idx]
         x_noiseless = get_noiseless_signal(theta)
@@ -85,10 +90,13 @@ def generate_synthetic_data(num_true_points_per_snr, num_false_points_per_snr, s
         x = x_noiseless + awgn
         label = abs(theta - theta_d) < theta_threshold
 
+        x_hat = np.matmul(V.conj().T, x)
+
         # append
         noiseless_vec[snr_idx, :] = x_noiseless
         awgn_vec[snr_idx, :] = awgn
         x_vec[snr_idx, :] = x
+        x_hat_vec[snr_idx, :] = x_hat
         labels_vec[snr_idx] = label
 
     signals = {
@@ -98,6 +106,7 @@ def generate_synthetic_data(num_true_points_per_snr, num_false_points_per_snr, s
         'x_noiseless': noiseless_vec,
         'awgn': awgn_vec,
         'x': x_vec,
+        'x_hat': x_hat_vec,
         'label': labels_vec
     }
 
@@ -238,6 +247,7 @@ def plot_random_signal(signals, label, snr):
     x = signals['x'][idx]
     xr = np.real(x)
     xi = np.imag(x)
+    x_hat = signals['x_hat'][idx]
 
     # split data to sensors
     indexes_1 = np.arange(start=0, stop=N * M, step=M)
@@ -262,29 +272,57 @@ def plot_random_signal(signals, label, snr):
     theta = signals['theta'][idx]
 
     # Plot
-    fig, ax = plt.subplots(2, 2, gridspec_kw={'hspace': 0, 'wspace': 0}, figsize=(10,5))
-    fig.subplots_adjust(top=0.5)
+    fig = plt.figure(figsize=(10, 5))
+    ax1 = plt.subplot2grid((2, 3), (0, 0))
+    ax1.plot(xr1, label=r'Re{x_1(n)}')
+    ax1.plot(xi1, label=r'Im{x_1(n)}')
+    ax1.axes.get_xaxis().set_visible(False)
 
-    ax[0, 0].plot(xr1, label=r'Re{x_1(n)}')
-    ax[0, 0].plot(xi1, label=r'Im{x_1(n)}')
-    # ax[0, 0].legend()
+    ax2 = plt.subplot2grid((2, 3), (1, 0), sharex=ax1)
+    ax2.plot(xr2, label=r'Re{x_1(n)}')
+    ax2.plot(xi2, label=r'Im{x_1(n)}')
+    ax2.set_xlabel('Time [Sample]')
 
-    ax[1, 0].plot(xr2, label=r'Re{x_2(n)}')
-    ax[1, 0].plot(xi2, label=r'Im{x_2(n)}')
-    ax[1, 0].set_xlabel('n [sample]')
-    # ax[1, 0].legend()
+    ax3 = plt.subplot2grid((2, 3), (0, 1))
+    ax3.stem(f_kHz, np.abs(x1_hat), label=r'$|\hat{x}_1(f)|$')
+    ax3.axes.get_yaxis().set_visible(False)
+    ax3.axes.get_xaxis().set_visible(False)
 
-    ax[0, 1].stem(f_kHz, np.abs(x1_hat), label=r'$|\hat{x}_1(f)|$')
-    # ax[0, 1].legend()
-    ax[0, 1].yaxis.tick_right()
+    ax4 = plt.subplot2grid((2, 3), (1, 1), sharex=ax3)
+    ax4.stem(f_kHz, np.abs(x2_hat), label=r'$|\hat{x}_2(f)|$')
+    ax4.axes.get_yaxis().set_visible(False)
+    ax4.set_xlabel('Frequency [KHz]')
 
-    ax[1, 1].stem(f_kHz, np.abs(x2_hat), label=r'$|\hat{x}_2(f)|$')
-    ax[1, 1].set_xlabel('f [kHz]')
-    # ax[1, 1].legend()
-    ax[1, 1].yaxis.tick_right()
+    ax5 = plt.subplot2grid((2, 3), (0, 2), rowspan=2)
+    ax5.stem(np.abs(x_hat))
+    ax5.axes.get_yaxis().set_visible(False)
+    ax5.set_xlabel(r'$\lambda$')
 
-    fig.suptitle(fr'Signals from $\theta = {theta:.1f}^\circ$' + f' (label = {label})' + '\n' +
-                 f'with SNR = ${snr:.2f}$ [dB]' + '\n' + fr'$\delta = {delta_over_lambda:.2f}\lambda$',
-                 y=0.98)
+    plt.tight_layout()
+    fig.subplots_adjust(wspace=0, hspace=0)
+    # fig, ax = plt.subplots(2, 2, gridspec_kw={'hspace': 0, 'wspace': 0}, figsize=(10,5))
+    # fig.subplots_adjust(top=0.5)
+    #
+    # ax[0, 0].plot(xr1, label=r'Re{x_1(n)}')
+    # ax[0, 0].plot(xi1, label=r'Im{x_1(n)}')
+    # # ax[0, 0].legend()
+    #
+    # ax[1, 0].plot(xr2, label=r'Re{x_2(n)}')
+    # ax[1, 0].plot(xi2, label=r'Im{x_2(n)}')
+    # ax[1, 0].set_xlabel('n [sample]')
+    # # ax[1, 0].legend()
+    #
+    # ax[0, 1].stem(f_kHz, np.abs(x1_hat), label=r'$|\hat{x}_1(f)|$')
+    # # ax[0, 1].legend()
+    # ax[0, 1].yaxis.tick_right()
+    #
+    # ax[1, 1].stem(f_kHz, np.abs(x2_hat), label=r'$|\hat{x}_2(f)|$')
+    # ax[1, 1].set_xlabel('f [kHz]')
+    # # ax[1, 1].legend()
+    # ax[1, 1].yaxis.tick_right()
+    #
+    fig.suptitle(fr'Signals from $\theta = {theta:.1f}^\circ$' + f' (label = {label})' +
+                 f'with SNR = ${snr:.2f}$ [dB]; ' + fr'$\delta = {delta_over_lambda:.2f}\lambda$')
 
     plt.show()
+    print("hi")

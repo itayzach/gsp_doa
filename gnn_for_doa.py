@@ -100,8 +100,8 @@ def main():
     device = torch.device("cuda" if use_cuda else "cpu")
     kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
 
-    snr_vec_train = np.arange(start=5, stop=20, step=3)
-    snr_vec_test = np.arange(start=-10, stop=10, step=3)
+    snr_vec_train = np.arange(start=0, stop=10, step=3)
+    snr_vec_test = np.arange(start=0, stop=10, step=3)
 
     train_set = GraphSignalsDataset(num_true_points_per_snr=100,
                                     num_false_points_per_snr=100,
