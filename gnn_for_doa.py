@@ -6,7 +6,7 @@ import torch.optim as optim
 import numpy as np
 import matplotlib.pyplot as plt
 from gsp import gsp_doa, plot_random_signal
-from gnn import GCN, MLP, GraphSignalsDataset, plot_accuracy, gnn_doa
+from gnn import GCN, MLP, GraphSignalsDataset, plot_accuracy, gnn_doa, visualize_complex_matrix
 from parameters import plots_dir
 from utils import mkdir_p
 
@@ -87,11 +87,11 @@ def main():
                         help='how many batches to wait before logging training status')
     parser.add_argument('--plot-gsp-figs', type=bool, default=True,
                         help='plot GSP figures')
-    parser.add_argument('--run-gsp-doa', type=bool, default=True,
+    parser.add_argument('--run-gsp-doa', type=bool, default=False,
                         help='Run Graph Signal Processing DOA estimation')
     parser.add_argument('--run-gnn-doa', type=bool, default=True,
                         help='Run Graph Neural Network DOA estimation')
-    parser.add_argument('--run-mlp-doa', type=bool, default=True,
+    parser.add_argument('--run-mlp-doa', type=bool, default=False,
                         help='Run Multi Layer Perceptron DOA estimation')
     args = parser.parse_args()
 
@@ -103,15 +103,15 @@ def main():
     snr_vec_train = np.arange(start=0, stop=15, step=3)
     snr_vec_test = np.arange(start=-7, stop=15, step=3)
 
-    train_set = GraphSignalsDataset(num_true_points_per_snr=10,
-                                    num_false_points_per_snr=10,
+    train_set = GraphSignalsDataset(num_true_points_per_snr=100,
+                                    num_false_points_per_snr=70,
                                     snr_vec=snr_vec_train)
     train_loader = torch.utils.data.DataLoader(
         train_set,
         batch_size=args.batch_size, shuffle=True, **kwargs)
 
-    test_set = GraphSignalsDataset(num_true_points_per_snr=100,
-                                   num_false_points_per_snr=100,
+    test_set = GraphSignalsDataset(num_true_points_per_snr=70,
+                                   num_false_points_per_snr=70,
                                    snr_vec=snr_vec_test)
     test_loader = torch.utils.data.DataLoader(
         test_set,
@@ -166,9 +166,14 @@ def main():
         gnn_doa_est_labels_vec, gnn_doa_true_accuracy_vs_snr, gnn_doa_false_accuracy_vs_snr = gnn_doa(gnn_model, test_set)
         gnn_doa_accuracy_vs_snr = (gnn_doa_true_accuracy_vs_snr + gnn_doa_false_accuracy_vs_snr) / 2
 
-        ####################################################################################################################
+        # visualize_complex_matrix(gnn_model.gcn_layer1.fc_layers[0].fc_r.weight.data.numpy() +
+        #                          1j*gnn_model.gcn_layer1.fc_layers[0].fc_i.weight.data.numpy(), 'GCN weights')
+        # W_gnn = gnn_model.gcn_layer1.fc_layers[0].fc_r.weight.data.numpy() + 1j * gnn_model.gcn_layer1.fc_layers[
+        #     0].fc_i.weight.data.numpy()
+        # print(np.linalg.norm(W_gnn))
+        ################################################################################################################
         # Multi Layer Perceptron DOA
-        ####################################################################################################################
+        ################################################################################################################
         if args.run_mlp_doa:
             # model = GraphNet().to(device)
             mlp_model = MLP().to(device)
@@ -192,6 +197,11 @@ def main():
             mlp_doa_est_labels_vec, mlp_doa_true_accuracy_vs_snr, mlp_doa_false_accuracy_vs_snr = gnn_doa(mlp_model,
                                                                                                           test_set)
             mlp_doa_accuracy_vs_snr = (mlp_doa_true_accuracy_vs_snr + mlp_doa_false_accuracy_vs_snr) / 2
+
+            # visualize_complex_matrix(mlp_model.fc1.fc_r.weight.data.numpy() +
+            #                          1j * mlp_model.fc1.fc_i.weight.data.numpy(), 'MLP weights')
+            # W_mlp = mlp_model.fc1.fc_r.weight.data.numpy() + 1j * mlp_model.fc1.fc_i.weight.data.numpy()
+            # print(np.linalg.norm(W_mlp))
     ####################################################################################################################
     # Compare
     ####################################################################################################################
@@ -203,10 +213,12 @@ def main():
         np.set_printoptions(precision=2)
         print("MLP accuracy:")
         print(mlp_doa_accuracy_vs_snr)
+
     if args.run_gnn_doa:
         np.set_printoptions(precision=2)
         print("GNN accuracy:")
         print(gnn_doa_accuracy_vs_snr)
+
 
     compare_methods(test_set.signals['snr'], '',
                     gsp_doa_accuracy_vs_snr,

@@ -4,7 +4,7 @@ import numpy as np
 import numpy.matlib
 import scipy
 import matplotlib.pyplot as plt
-from parameters import M, N, theta_d, theta_threshold, delta, fs, c, w0, m, n, Amp, f0, delta_over_lambda
+from parameters import M, N, theta_d, theta_threshold, delta, fs, c, w0, m, n, Amp, f0, delta_over_lambda, plots_dir
 
 
 def signaltonoise(a, axis=0, ddof=0):
@@ -86,8 +86,7 @@ def generate_synthetic_data(num_true_points_per_snr, num_false_points_per_snr, s
         theta = theta_vec[snr_idx]
         x_noiseless = get_noiseless_signal(A=Amp, f=f0, theta=theta)
 
-        awgn = gen_awgn(snr) + \
-            get_noiseless_signal(A=2*Amp, f=3*f0, theta=120)
+        awgn = gen_awgn(snr) #+ get_noiseless_signal(A=3*Amp, f=3*f0, theta=120)
         x = x_noiseless + awgn
         label = abs(theta - theta_d) < theta_threshold
 
@@ -273,25 +272,31 @@ def plot_random_signal(signals, label, snr):
     theta = signals['theta'][idx]
 
     # Plot
-    fig = plt.figure(figsize=(10, 5))
+    fig = plt.figure(figsize=(10, 4))
+    fig.subplots_adjust(top=0.5)
     ax1 = plt.subplot2grid((2, 3), (0, 0))
     ax1.plot(xr1, label=r'Re{x_1(n)}')
     ax1.plot(xi1, label=r'Im{x_1(n)}')
     ax1.axes.get_xaxis().set_visible(False)
+    ax1.set_ylabel('Sensor #1')
+    print(f'theta = {theta:.2f} with SNR = {snr:.2f} dB')
 
     ax2 = plt.subplot2grid((2, 3), (1, 0), sharex=ax1)
     ax2.plot(xr2, label=r'Re{x_1(n)}')
     ax2.plot(xi2, label=r'Im{x_1(n)}')
     ax2.set_xlabel('Time [Sample]')
+    ax2.set_ylabel('Sensor #2')
 
     ax3 = plt.subplot2grid((2, 3), (0, 1))
     ax3.stem(f_kHz, np.abs(x1_hat), label=r'$|\hat{x}_1(f)|$')
     ax3.axes.get_yaxis().set_visible(False)
     ax3.axes.get_xaxis().set_visible(False)
+    # ax3.set_ylabel(fr'$Y_1(f)$')
 
     ax4 = plt.subplot2grid((2, 3), (1, 1), sharex=ax3)
     ax4.stem(f_kHz, np.abs(x2_hat), label=r'$|\hat{x}_2(f)|$')
     ax4.axes.get_yaxis().set_visible(False)
+    # ax3.set_ylabel(fr'$Y_2(f)$')
     ax4.set_xlabel('Frequency [KHz]')
     ax4.set_xticks(np.arange(f_kHz[0], f_kHz[-1]+1, step=1))
 
@@ -299,10 +304,11 @@ def plot_random_signal(signals, label, snr):
     ax5.stem(np.abs(x_hat))
     ax5.axes.get_yaxis().set_visible(False)
     ax5.set_xlabel(r'$\lambda$')
+    # ax5.set_ylabel(fr'$\hat{{y}}(\lambda)$')
 
     plt.tight_layout()
     fig.subplots_adjust(wspace=0, hspace=0)
-    fig.suptitle(fr'Signals from $\theta = {theta:.1f}^\circ$' + f' (label = {label})' +
-                 f'with SNR = ${snr:.2f}$ [dB]; ' + fr'$\delta = {delta_over_lambda:.2f}\lambda$')
-
+    fig.suptitle(fr'Signal from $\theta = {theta:.1f}^\circ$' + f' (label = {label}) ' +
+                 f'with SNR = ${snr:.2f}$ [dB]; ' + fr'$\delta = {delta_over_lambda:.2f}\lambda$', y=0.98)
+    fig.savefig(plots_dir + '/signal_' + str(theta) + '_' + str(snr) + '.png', dpi=200)
     plt.show()

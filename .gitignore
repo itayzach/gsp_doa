@@ -2,5 +2,6 @@
 *.asv
 *.swp
 *.ini
+*.png
 .idea/
 __pycache__/

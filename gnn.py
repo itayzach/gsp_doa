@@ -86,11 +86,14 @@ def plot_accuracy(args, model_name, train_acc_vec, test_acc_vec):
     plt.show()
 
 
-def signal_to_noise(a, axis=0, ddof=0):
-    a = np.asanyarray(a)
-    m = a.mean(axis)
-    sd = a.std(axis=axis, ddof=ddof)
-    return np.where(sd == 0, 0, m / sd)
+def visualize_complex_matrix(A, title):
+    fig, (ax1, ax2) = plt.subplots(1, 2)
+    ax1.imshow(np.real(A), cmap='Blues')
+    ax1.set_title('Real')
+    ax2.imshow(np.imag(A), cmap='Blues')
+    ax2.set_title('Imag')
+    fig.suptitle(title)
+    plt.show()
 
 
 def gnn_doa(model, test_set):
@@ -136,12 +139,14 @@ class GCN(nn.Module):
 
         I = np.eye(A.shape[0]) + 1j*np.eye(A.shape[0])
         A_h = A
+
         dii = np.sum(np.abs(A_h), axis=1, keepdims=False)
         D = np.diag(dii)
-        D_inv_h = np.diag(dii ** (-1))
+        D_inv_h = np.diag(dii ** (-0.5))
         # Laplacian
-        L = np.matmul(D_inv_h, np.matmul(A_h, D))
+        L = np.matmul(D_inv_h, np.matmul(A_h, D_inv_h))
         # L = I
+        # visualize_complex_matrix(L[0:10,0:10], 'L')
 
         self.gcn_layer1 = GCNLayer(L, N*M, 2, max_deg)
         # self.fc1 = ComplexLinear(N*M, 2)

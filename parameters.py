@@ -1,7 +1,7 @@
 import numpy as np
 
 # Parameters
-N = 21
+N = 41
 n = np.arange(0, N)    # samples
 M = 6
 m = np.arange(1, M+1)  # sensors
