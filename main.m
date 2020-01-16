@@ -7,8 +7,11 @@ f0 = 1e3;             % singletone [Hz]
 w0 = 2*pi*f0;         % [rad/sec]
 fs = 8e3;             % sampling rate [Hz]
 B = 1;                % amplitude [V]
-delta = 0.1;          % uniform spacing between sensors [m]
 c = 340;              % speed of sound [m/s]
+delta_over_lambda = 0.3;
+delta = delta_over_lambda*c/f0;       % uniform spacing between sensors [m]
+
+fprintf('delta = %.2f\n', delta);
 
 theta = 70.3;                       % [degrees]
 tau = delta*cos(theta*pi/180)*fs/c; % [samples]
@@ -17,10 +20,13 @@ d = exp(-1j*w0/fs*(m-1)*tau);       % steering vector
 %% Signals
 % after a bandpass filter around f0 (filter out the negative spectrum)
 x1_bp_noiseless = B*exp(1j*w0/fs*n);
-SNR_vec = [5 inf];
+SNR_vec = [ inf 5];
 
 est_theta_vec = 0:180;
 % est_theta_vec = [theta 30 120];
+
+plot_gft = length(est_theta_vec) <= 3;
+
 piquancy = zeros(length(SNR_vec), length(est_theta_vec));
     
 for SNR_idx = 1:length(SNR_vec)
@@ -90,7 +96,16 @@ for SNR_idx = 1:length(SNR_vec)
         i_eig = find(abs(lambda - 1) < 1e-10);
         assert(length(i_eig) == 1, 'found more than one i_eig');
         x_hat = V' * x;
-    %     figure; stem(abs(x_hat))
+        if plot_gft
+            figure; stem(abs(x_hat), 'LineWidth', 2); 
+            xlabel('$k$ [index of $\lambda$]', 'Interpreter', 'latex', 'FontSize', 20)
+            ylabel('$|$GFT$|$', 'Interpreter', 'latex', 'FontSize', 20)
+            if est_theta == theta
+                title(['$\theta = ' num2str(theta) '^{\circ}$ (correct DoA)'], 'Interpreter', 'latex', 'FontSize', 20);
+            else
+                title(['$\theta = ' num2str(est_theta) '^{\circ}$ (incorrect DoA)'], 'Interpreter', 'latex', 'FontSize', 20);
+            end
+        end
         x_hat_normed = x_hat/abs(x_hat(i_eig));
         x_hat_ = x_hat_normed([1:i_eig-1 i_eig+1:end]);
         piquancy(SNR_idx, th_idx) = 1/sqrt(sum(abs(x_hat_).^2));
@@ -100,10 +115,15 @@ end
 figure; 
 plots = cell(size(SNR_vec));
 for SNR_idx = 1:length(SNR_vec)
-    plots{SNR_idx} = plot(est_theta_vec, piquancy(SNR_idx,:), 'LineWidth', 2, 'DisplayName', ['SNR = ' num2str(SNR_vec(SNR_idx)) ' [dB]']); 
+    if SNR == Inf
+        plot_title = 'Noiseless';
+    else
+        plot_title = ['SNR = ' num2str(SNR_vec(SNR_idx)) ' [dB]'];
+    end
+    plots{SNR_idx} = plot(est_theta_vec, piquancy(SNR_idx,:), 'LineWidth', 2, 'DisplayName', plot_title); 
     hold on;
 end
 xline(theta, '--r');
-xlabel('$\theta$', 'Interpreter', 'latex', 'FontSize', 14);
-ylabel('$\xi(\theta)$', 'Interpreter', 'latex', 'FontSize', 14);
-legend([plots{1} plots{2}], 'Interpreter', 'latex', 'FontSize', 14, 'Location', 'best')
+xlabel('$\theta$', 'Interpreter', 'latex', 'FontSize', 20);
+ylabel('$\xi(\theta)$', 'Interpreter', 'latex', 'FontSize', 20);
+legend([plots{1} plots{2}], 'Interpreter', 'latex', 'FontSize', 20, 'Location', 'best')
