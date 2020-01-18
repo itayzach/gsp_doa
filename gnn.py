@@ -14,16 +14,16 @@ from gsp import generate_synthetic_data, get_adjacency
 
 
 class GraphSignalsDataset(torch.utils.data.Dataset):
-    def __init__(self, num_true_points_per_snr, num_false_points_per_snr, snr_vec):
-        signals = generate_synthetic_data(num_true_points_per_snr, num_false_points_per_snr, snr_vec)
+    def __init__(self, num_true_points_per_snr, num_false_points_per_snr, snr_vec, interferences):
+        signals = generate_synthetic_data(num_true_points_per_snr, num_false_points_per_snr, snr_vec, interferences)
 
         self.total_num_true_points = snr_vec.size * num_true_points_per_snr
         self.total_num_false_points = snr_vec.size * num_false_points_per_snr
         self.num_true_points_per_snr = num_true_points_per_snr
         self.num_false_points_per_snr = num_false_points_per_snr
         self.snr_vec = snr_vec
-        self.Xr = torch.tensor(np.real(signals['x']), dtype=torch.float)
-        self.Xi = torch.tensor(np.imag(signals['x']), dtype=torch.float)
+        self.Xr = torch.tensor(np.real(signals['x']), dtype=torch.float).unsqueeze(2)
+        self.Xi = torch.tensor(np.imag(signals['x']), dtype=torch.float).unsqueeze(2)
         # self.Xr = torch.tensor(np.real(signals['x_hat']), dtype=torch.float)
         # self.Xi = torch.tensor(np.imag(signals['x_hat']), dtype=torch.float)
         self.label = torch.tensor(signals['label'], dtype=torch.long)
@@ -34,40 +34,10 @@ class GraphSignalsDataset(torch.utils.data.Dataset):
         return self.total_num_true_points + self.total_num_false_points
 
     def __getitem__(self, index):
-        return (self.Xr[index, :], self.Xi[index, :]), self.label[index]
+        return (self.Xr[index, :, :], self.Xi[index, :, :]), self.label[index]
 
     def get_signals(self):
         return self.signals
-
-
-class GraphNet(nn.Module):
-    def __init__(self):
-        super(GraphNet, self).__init__()
-        self.fc1 = ComplexLinear(N*M, 10)
-        self.fc2 = nn.Linear(10, 2)
-
-        # precompute adjacency matrix before training
-        A, Ar, Ai = get_adjacency(theta=theta_d)
-        self.register_buffer('Ar', Ar)
-        self.register_buffer('Ai', Ai)
-
-    def forward(self, xr, xi):
-        # Batch size
-        B = xr.size(0)
-
-        # AXr = Ar.mm(Xr) - Ai.mm(Xi)
-        # AXi = Ar.mm(Xi) + Ai.mm(Xr)
-        avg_neighbor_features_r = (torch.bmm(self.Ar.unsqueeze(0).expand(B, -1, -1), xr.view(B, -1, 1)).view(B, -1)) - \
-                                  (torch.bmm(self.Ai.unsqueeze(0).expand(B, -1, -1), xi.view(B, -1, 1)).view(B, -1))
-        avg_neighbor_features_i = (torch.bmm(self.Ar.unsqueeze(0).expand(B, -1, -1), xi.view(B, -1, 1)).view(B, -1)) + \
-                                  (torch.bmm(self.Ai.unsqueeze(0).expand(B, -1, -1), xr.view(B, -1, 1)).view(B, -1))
-        xr, xi = self.fc1(avg_neighbor_features_r, avg_neighbor_features_i)
-        x = torch.sqrt(torch.pow(xr, 2) + torch.pow(xi, 2))
-        x = F.relu(x)
-
-        x = self.fc2(x)
-
-        return x
 
 
 def plot_accuracy(args, model_name, train_acc_vec, test_acc_vec):
@@ -80,10 +50,11 @@ def plot_accuracy(args, model_name, train_acc_vec, test_acc_vec):
     plt.ylabel('Accuracy [%]')
     plt.legend()
     plt.title(model_name)
-    plt.xlim(0, args.epochs)
+    plt.xlim(0, args.epochs-1)
     plt.ylim(80, 100)
+    plt.tight_layout()
     fig.savefig(plots_dir + '/' + model_name + '_accuracy.png', dpi=200)
-    plt.show()
+    # plt.show()
 
 
 def visualize_complex_matrix(A, title):
@@ -129,16 +100,16 @@ def gnn_doa(model, test_set):
 
 
 ####################################################################################################################
-# different model
+# GCN
 ####################################################################################################################
 class GCN(nn.Module):
     def __init__(self):
         super(GCN, self).__init__()
-        max_deg = 1
+
         A, Ar, Ai = get_adjacency(theta=theta_d)
 
         I = np.eye(A.shape[0]) + 1j*np.eye(A.shape[0])
-        A_h = A
+        A_h = A + I
 
         dii = np.sum(np.abs(A_h), axis=1, keepdims=False)
         D = np.diag(dii)
@@ -148,14 +119,30 @@ class GCN(nn.Module):
         # L = I
         # visualize_complex_matrix(L[0:10,0:10], 'L')
 
-        self.gcn_layer1 = GCNLayer(L, N*M, 2, max_deg)
-        # self.fc1 = ComplexLinear(N*M, 2)
+        max_deg = 2
+        self.gcn_layer1 = GCNLayer(L, 1, 10, max_deg)
+        self.gcn_layer2 = GCNLayer(L, 10, 1, max_deg)
+        # self.fc1 = ComplexLinear(in_features=N*M, out_features=2, bias=True)
+        self.fc1 = nn.Linear(in_features=N*M, out_features=2, bias=True)
 
     def forward(self, xr, xi):
         xr, xi = self.gcn_layer1(xr, xi)
-
         xr, xi = complex_relu(xr, xi)
+
+        xr, xi = self.gcn_layer2(xr, xi)
+        xr, xi = complex_relu(xr, xi)
+
         x = torch.sqrt(torch.pow(xr, 2) + torch.pow(xi, 2))
+        x = x.squeeze()
+        x = self.fc1(x)
+        x = F.relu(x)
+
+        # xr = xr.squeeze()
+        # xi = xi.squeeze()
+        # xr, xi = self.fc1(xr, xi)
+        # xr, xi = complex_relu(xr, xi)
+        # x = torch.sqrt(torch.pow(xr, 2) + torch.pow(xi, 2))
+
         return F.log_softmax(x, dim=1)
 
 
@@ -164,7 +151,7 @@ class GCNLayer(nn.Module):
         super(GCNLayer, self).__init__()
         self.fc_layers = []
         for i in range(max_deg):
-            fc = ComplexLinear(in_features, out_features)
+            fc = ComplexLinear(in_features, out_features, bias=True)
             self.add_module(f'fc_{i}', fc)
             self.fc_layers.append(fc)
 
@@ -188,14 +175,22 @@ class GCNLayer(nn.Module):
             # Batch size
             B = Xr.size(0)
 
-            # AXr = Ar.mm(Xr) - Ai.mm(Xi)
-            # AXi = Ar.mm(Xi) + Ai.mm(Xr)
-            avg_neighbor_features_r = (torch.bmm(Lr.unsqueeze(0).expand(B, -1, -1), Xr.view(B, -1, 1)).view(B, -1)) - \
-                                      (torch.bmm(Li.unsqueeze(0).expand(B, -1, -1), Xi.view(B, -1, 1)).view(B, -1))
-            avg_neighbor_features_i = (torch.bmm(Lr.unsqueeze(0).expand(B, -1, -1), Xi.view(B, -1, 1)).view(B, -1)) + \
-                                      (torch.bmm(Li.unsqueeze(0).expand(B, -1, -1), Xr.view(B, -1, 1)).view(B, -1))
+            # LXr = Lr.mm(Xr) - Li.mm(Xi)
+            # LXi = Lr.mm(Xi) + Li.mm(Xr)
+            if Xr.dim() == 2:
+                LXr = (torch.bmm(Lr.unsqueeze(0).expand(B, -1, -1), Xr.view(B, -1, 1)).view(B, -1) - \
+                      torch.bmm(Li.unsqueeze(0).expand(B, -1, -1), Xi.view(B, -1, 1)).view(B, -1)).unsqueeze(2)
+                LXi = (torch.bmm(Lr.unsqueeze(0).expand(B, -1, -1), Xi.view(B, -1, 1)).view(B, -1) + \
+                      torch.bmm(Li.unsqueeze(0).expand(B, -1, -1), Xr.view(B, -1, 1)).view(B, -1)).unsqueeze(2)
 
-            fc_r, fc_i = fc(avg_neighbor_features_r, avg_neighbor_features_i)
+            else:
+                LXr = torch.bmm(Lr.unsqueeze(0).expand(B, -1, -1), Xr) - \
+                       torch.bmm(Li.unsqueeze(0).expand(B, -1, -1), Xi)
+                LXi = torch.bmm(Lr.unsqueeze(0).expand(B, -1, -1), Xi) + \
+                       torch.bmm(Li.unsqueeze(0).expand(B, -1, -1), Xr)
+
+            # fc_r, fc_i = fc(avg_neighbor_features_r, avg_neighbor_features_i)
+            fc_r, fc_i = fc(LXr, LXi)
             Zr = fc_r + Zr
             Zi = fc_i + Zi
 
@@ -209,9 +204,11 @@ class GCNLayer(nn.Module):
 class MLP(nn.Module):
     def __init__(self):
         super(MLP, self).__init__()
-        self.fc1 = ComplexLinear(N*M, 2)
+        self.fc1 = ComplexLinear(N*M, 2, bias=True)
 
     def forward(self, xr, xi):
+        xr = xr.squeeze()
+        xi = xi.squeeze()
         xr, xi = self.fc1(xr, xi)
         xr, xi = complex_relu(xr, xi)
         x = torch.sqrt(torch.pow(xr, 2) + torch.pow(xi, 2))

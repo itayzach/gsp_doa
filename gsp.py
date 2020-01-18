@@ -4,7 +4,8 @@ import numpy as np
 import numpy.matlib
 import scipy
 import matplotlib.pyplot as plt
-from parameters import M, N, theta_d, theta_threshold, delta, fs, c, w0, m, n, Amp, f0, delta_over_lambda, plots_dir
+from matplotlib.patches import Ellipse
+from parameters import M, N, theta_d, theta_threshold, theta_threshold_for_plot, delta, fs, c, w0, m, n, Amp, f0, delta_over_lambda, plots_dir
 
 
 def signaltonoise(a, axis=0, ddof=0):
@@ -49,14 +50,14 @@ def gen_awgn(snr):
 
 def gen_not_theta_d_values(total_num_false_points):
     false_points = np.random.uniform(0, 180, total_num_false_points)
-    forbidden_idx = np.argwhere(abs(false_points - theta_d) < theta_threshold).squeeze()
+    forbidden_idx = np.argwhere(abs(false_points - theta_d) < theta_threshold_for_plot).squeeze()
     while forbidden_idx.size > 0:
         false_points[forbidden_idx] = np.random.uniform(0, 180, forbidden_idx.size)
-        forbidden_idx = np.argwhere(abs(false_points - theta_d) < theta_threshold).squeeze()
+        forbidden_idx = np.argwhere(abs(false_points - theta_d) < theta_threshold_for_plot).squeeze()
     return false_points
 
 
-def generate_synthetic_data(num_true_points_per_snr, num_false_points_per_snr, snr_vec):
+def generate_synthetic_data(num_true_points_per_snr, num_false_points_per_snr, snr_vec, interferences):
     if delta > c/(2*f0):
         sign = '>'
     else:
@@ -86,7 +87,9 @@ def generate_synthetic_data(num_true_points_per_snr, num_false_points_per_snr, s
         theta = theta_vec[snr_idx]
         x_noiseless = get_noiseless_signal(A=Amp, f=f0, theta=theta)
 
-        awgn = gen_awgn(snr) #+ get_noiseless_signal(A=3*Amp, f=3*f0, theta=120)
+        awgn = gen_awgn(snr)
+        if interferences is not None:
+            awgn += interferences
         x = x_noiseless + awgn
         label = abs(theta - theta_d) < theta_threshold
 
@@ -238,7 +241,7 @@ def gsp_doa(test_set):
     return est_theta_vec, est_labels_vec, true_accuracy_vs_snr, false_accuracy_vs_snr
 
 
-def plot_random_signal(signals, label, snr):
+def plot_random_signal(signals, label, snr, interference_str,  theta_str, snr_str):
     idx = np.intersect1d(np.argwhere(signals['label'] == label), np.where(signals['snr_rep'] >= snr))
     assert len(idx) > 0, 'w00t?'
     if len(idx) > 1:
@@ -273,7 +276,7 @@ def plot_random_signal(signals, label, snr):
 
     # Plot
     fig = plt.figure(figsize=(10, 4))
-    fig.subplots_adjust(top=0.5)
+    fig.subplots_adjust(top=0.18)
     ax1 = plt.subplot2grid((2, 3), (0, 0))
     ax1.plot(xr1, label=r'Re{x_1(n)}')
     ax1.plot(xi1, label=r'Im{x_1(n)}')
@@ -298,17 +301,19 @@ def plot_random_signal(signals, label, snr):
     ax4.axes.get_yaxis().set_visible(False)
     # ax3.set_ylabel(fr'$Y_2(f)$')
     ax4.set_xlabel('Frequency [KHz]')
-    ax4.set_xticks(np.arange(f_kHz[0], f_kHz[-1]+1, step=1))
+    ax4.set_xticks(np.arange(f_kHz[0], f_kHz[-1]+1, step=2))
 
     ax5 = plt.subplot2grid((2, 3), (0, 2), rowspan=2)
     ax5.stem(np.abs(x_hat))
+    ellipse = Ellipse((x_hat.shape[0] - 1, np.abs(x_hat[-1])), width=12, height=1, edgecolor='r', fc='None', lw=2)
+    ax5.add_patch(ellipse)
     ax5.axes.get_yaxis().set_visible(False)
     ax5.set_xlabel(r'$\lambda$')
     # ax5.set_ylabel(fr'$\hat{{y}}(\lambda)$')
 
     plt.tight_layout()
-    fig.subplots_adjust(wspace=0, hspace=0)
-    fig.suptitle(fr'Signal from $\theta = {theta:.1f}^\circ$' + f' (label = {label}) ' +
-                 f'with SNR = ${snr:.2f}$ [dB]; ' + fr'$\delta = {delta_over_lambda:.2f}\lambda$', y=0.98)
-    fig.savefig(plots_dir + '/signal_' + str(theta) + '_' + str(snr) + '.png', dpi=200)
-    plt.show()
+    fig.subplots_adjust(wspace=0.05, hspace=0.08)
+    fig.suptitle(fr'Signal from $\theta = {theta:.1f}^\circ$' + f' (label = {label}) ' + 'with ' + interference_str + ' interferences\n' +
+                 f'with SNR = ${snr}$ [dB]; ' + fr'$\delta = {delta_over_lambda:.1f}\lambda$', y=0.98)
+    fig.savefig(plots_dir + '/signal_' + theta_str + '_' + snr_str + '_' + interference_str + '_interferences' + '.png', dpi=200)
+    # plt.show()
