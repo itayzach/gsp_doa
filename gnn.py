@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import scipy
-from complexLayers import ComplexLinear
+from complexLayers import ComplexLinear, ComplexConv1d
 from complexFunctions import complex_relu
 import matplotlib.pyplot as plt
 import networkx as nx
@@ -147,7 +147,7 @@ class GCN(nn.Module):
 
 
 class GCNLayer(nn.Module):
-    def __init__(self, L, in_features, out_features, max_deg=1):
+    def __init__(self, L, in_features, out_features, max_deg):
         super(GCNLayer, self).__init__()
         self.fc_layers = []
         for i in range(max_deg):
@@ -204,13 +204,21 @@ class GCNLayer(nn.Module):
 class MLP(nn.Module):
     def __init__(self):
         super(MLP, self).__init__()
-        self.fc1 = ComplexLinear(N*M, 2, bias=True)
+        self.conv1 = ComplexConv1d(1, 20, bias=True, kernel_size=1)
+        self.conv2 = ComplexConv1d(20, 1, bias=True, kernel_size=1)
+        self.fc1 = nn.Linear(N * M, 2, bias=True)
 
     def forward(self, xr, xi):
-        xr = xr.squeeze()
-        xi = xi.squeeze()
-        xr, xi = self.fc1(xr, xi)
+        # xr = xr.squeeze()
+        # xi = xi.squeeze()
+        xr = xr.permute(0, 2, 1)
+        xi = xi.permute(0, 2, 1)
+        xr, xi = self.conv1(xr, xi)
+        xr, xi = complex_relu(xr, xi)
+        xr, xi = self.conv2(xr, xi)
         xr, xi = complex_relu(xr, xi)
         x = torch.sqrt(torch.pow(xr, 2) + torch.pow(xi, 2))
-
+        x = x.squeeze()
+        x = self.fc1(x)
+        x = F.relu(x)
         return F.log_softmax(x, dim=1)

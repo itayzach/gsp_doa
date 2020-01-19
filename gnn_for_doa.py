@@ -52,7 +52,7 @@ def compare_methods(snr_vec, label, gsp_doa_accuracy_vs_snr, mlp_doa_accuracy_vs
     if gsp_doa_accuracy_vs_snr.size > 0:
         plt.plot(snr_vec, gsp_doa_accuracy_vs_snr, label='GSP', linewidth=2)
     if mlp_doa_accuracy_vs_snr.size > 0:
-        plt.plot(snr_vec, mlp_doa_accuracy_vs_snr, label='MLP', linewidth=2)
+        plt.plot(snr_vec, mlp_doa_accuracy_vs_snr, label='CNN', linewidth=2)
     if gnn_doa_accuracy_vs_snr.size > 0:
         plt.plot(snr_vec, gnn_doa_accuracy_vs_snr, label='GNN', linewidth=2)
     plt.legend()
@@ -77,11 +77,11 @@ def main():
                         help='input batch size for training (default: 64)')
     parser.add_argument('--test-batch-size', type=int, default=5,
                         help='input batch size for testing (default: 5)')
-    parser.add_argument('--epochs', type=int, default=50,
+    parser.add_argument('--epochs', type=int, default=100,
                         help='number of epochs to train (default: 100)')
     parser.add_argument('--lr', type=float, default=0.003,
                         help='learning rate (default: 0.001)')
-    parser.add_argument('--seed', type=int, default=1,
+    parser.add_argument('--seed', type=int, default=2,
                         help='random seed (default: 1)')
     parser.add_argument('--log-interval', type=int, default=100,
                         help='how many batches to wait before logging training status')
@@ -103,8 +103,8 @@ def main():
     snr_vec_train = np.arange(start=-5, stop=20, step=3)
     snr_vec_test = np.arange(start=-5, stop=20, step=3)
 
-    interference1 = get_noiseless_signal(A=2*Amp, f=4*f0, theta=120)
-    interference2 = get_noiseless_signal(A=2*Amp, f=7*f0, theta=30)
+    interference1 = get_noiseless_signal(A=1.5*Amp, f=f0, theta=30)
+    interference2 = get_noiseless_signal(A=1.5*Amp, f=f0, theta=120)
 
     train_set = GraphSignalsDataset(num_true_points_per_snr=100,
                                     num_false_points_per_snr=100,
@@ -168,6 +168,45 @@ def main():
         plot_random_signal(test_set0.get_signals(), label=True, snr=-5, interference_str='0', theta_str='theta_d', snr_str='low_snr')
         plot_random_signal(test_set0.get_signals(), label=False, snr=-5, interference_str='0', theta_str='not_theta_d', snr_str='low_snr')
     ####################################################################################################################
+    # Multi Layer Perceptron DOA
+    ####################################################################################################################
+    if args.run_mlp_doa:
+        # model = GraphNet().to(device)
+        mlp_model = MLP().to(device)
+        print(mlp_model)
+        optimizer = optim.SGD(mlp_model.parameters(), lr=args.lr, weight_decay=1e-1)
+        print('number of trainable parameters: %d' %
+              np.sum([np.prod(p.size()) if p.requires_grad else 0 for p in mlp_model.parameters()]))
+
+        train_acc_vec = np.array([])
+        test_acc_vec = np.array([])
+
+        for epoch in range(1, args.epochs + 1):
+            train_acc = train(args, mlp_model, device, train_loader, optimizer, epoch)
+            test_acc = test(args, mlp_model, device, test_loader0)
+
+            train_acc_vec = np.append(train_acc_vec, train_acc)
+            test_acc_vec = np.append(test_acc_vec, test_acc)
+
+        plot_accuracy(args, 'CNN', train_acc_vec, test_acc_vec)
+
+        mlp_doa_est_labels_vec0, mlp_doa_true_accuracy_vs_snr0, mlp_doa_false_accuracy_vs_snr0 = gnn_doa(mlp_model, test_set0)
+        mlp_doa_accuracy_vs_snr0 = (mlp_doa_true_accuracy_vs_snr0 + mlp_doa_false_accuracy_vs_snr0) / 2
+        mlp_doa_est_labels_vec1, mlp_doa_true_accuracy_vs_snr1, mlp_doa_false_accuracy_vs_snr1 = gnn_doa(mlp_model, test_set1)
+        mlp_doa_accuracy_vs_snr1 = (mlp_doa_true_accuracy_vs_snr1 + mlp_doa_false_accuracy_vs_snr1) / 2
+        mlp_doa_est_labels_vec2, mlp_doa_true_accuracy_vs_snr2, mlp_doa_false_accuracy_vs_snr2 = gnn_doa(mlp_model, test_set2)
+        mlp_doa_accuracy_vs_snr2 = (mlp_doa_true_accuracy_vs_snr2 + mlp_doa_false_accuracy_vs_snr2) / 2
+        # visualize_complex_matrix(mlp_model.fc1.fc_r.weight.data.numpy() +
+        #                          1j * mlp_model.fc1.fc_i.weight.data.numpy(), 'MLP weights')
+        # W_mlp = mlp_model.fc1.fc_r.weight.data.numpy() + 1j * mlp_model.fc1.fc_i.weight.data.numpy()
+        # print(np.linalg.norm(W_mlp))
+
+        np.set_printoptions(precision=2)
+        print("MLP accuracy:")
+        print(mlp_doa_accuracy_vs_snr0)
+        print(mlp_doa_accuracy_vs_snr1)
+        print(mlp_doa_accuracy_vs_snr2)
+    ####################################################################################################################
     # Graph Neural Network DOA
     ####################################################################################################################
     if args.run_gnn_doa:
@@ -204,56 +243,12 @@ def main():
         # W_gnn = gnn_model.gcn_layer1.fc_layers[0].fc_r.weight.data.numpy() + 1j * gnn_model.gcn_layer1.fc_layers[
         #     0].fc_i.weight.data.numpy()
         # print(np.linalg.norm(W_gnn))
-    ####################################################################################################################
-    # Multi Layer Perceptron DOA
-    ####################################################################################################################
-    if args.run_mlp_doa:
-        # model = GraphNet().to(device)
-        mlp_model = MLP().to(device)
-        print(mlp_model)
-        optimizer = optim.SGD(mlp_model.parameters(), lr=args.lr, weight_decay=1e-1)
-        print('number of trainable parameters: %d' %
-              np.sum([np.prod(p.size()) if p.requires_grad else 0 for p in mlp_model.parameters()]))
 
-        train_acc_vec = np.array([])
-        test_acc_vec = np.array([])
-
-        for epoch in range(1, args.epochs + 1):
-            train_acc = train(args, mlp_model, device, train_loader, optimizer, epoch)
-            test_acc = test(args, mlp_model, device, test_loader0)
-
-            train_acc_vec = np.append(train_acc_vec, train_acc)
-            test_acc_vec = np.append(test_acc_vec, test_acc)
-
-        plot_accuracy(args, 'MLP', train_acc_vec, test_acc_vec)
-
-        mlp_doa_est_labels_vec0, mlp_doa_true_accuracy_vs_snr0, mlp_doa_false_accuracy_vs_snr0 = gnn_doa(mlp_model, test_set0)
-        mlp_doa_accuracy_vs_snr0 = (mlp_doa_true_accuracy_vs_snr0 + mlp_doa_false_accuracy_vs_snr0) / 2
-        mlp_doa_est_labels_vec1, mlp_doa_true_accuracy_vs_snr1, mlp_doa_false_accuracy_vs_snr1 = gnn_doa(mlp_model, test_set1)
-        mlp_doa_accuracy_vs_snr1 = (mlp_doa_true_accuracy_vs_snr1 + mlp_doa_false_accuracy_vs_snr1) / 2
-        mlp_doa_est_labels_vec2, mlp_doa_true_accuracy_vs_snr2, mlp_doa_false_accuracy_vs_snr2 = gnn_doa(mlp_model, test_set2)
-        mlp_doa_accuracy_vs_snr2 = (mlp_doa_true_accuracy_vs_snr2 + mlp_doa_false_accuracy_vs_snr2) / 2
-        # visualize_complex_matrix(mlp_model.fc1.fc_r.weight.data.numpy() +
-        #                          1j * mlp_model.fc1.fc_i.weight.data.numpy(), 'MLP weights')
-        # W_mlp = mlp_model.fc1.fc_r.weight.data.numpy() + 1j * mlp_model.fc1.fc_i.weight.data.numpy()
-        # print(np.linalg.norm(W_mlp))
-    ####################################################################################################################
-    # Compare
-    ####################################################################################################################
-    if args.run_mlp_doa:
-        np.set_printoptions(precision=2)
-        print("MLP accuracy:")
-        print(mlp_doa_accuracy_vs_snr0)
-        print(mlp_doa_accuracy_vs_snr1)
-        print(mlp_doa_accuracy_vs_snr2)
-
-    if args.run_gnn_doa:
         np.set_printoptions(precision=2)
         print("GNN accuracy:")
         print(gnn_doa_accuracy_vs_snr0)
         print(gnn_doa_accuracy_vs_snr1)
         print(gnn_doa_accuracy_vs_snr2)
-
     ####################################################################################################################
     # Graph Signal Processing DOA
     ####################################################################################################################
@@ -267,12 +262,15 @@ def main():
         gsp_doa_est_theta_vec0, gsp_doa_est_labels_vec0, gsp_doa_true_accuracy_vs_snr0, gsp_doa_false_accuracy_vs_snr0 = gsp_doa(test_set0)
         gsp_doa_accuracy_vs_snr0 = (gsp_doa_true_accuracy_vs_snr0 + gsp_doa_false_accuracy_vs_snr0) / 2
 
-    if args.run_gsp_doa:
         np.set_printoptions(precision=2)
         print("GSP accuracy:")
         print(gsp_doa_accuracy_vs_snr0)
         print(gsp_doa_accuracy_vs_snr1)
         print(gsp_doa_accuracy_vs_snr2)
+
+    ####################################################################################################################
+    # Compare
+    ####################################################################################################################
     compare_methods(test_set0.signals['snr'], '',
                     gsp_doa_accuracy_vs_snr0,
                     mlp_doa_accuracy_vs_snr0,
