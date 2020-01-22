@@ -31,8 +31,8 @@ piquancy = zeros(length(SNR_vec), length(est_theta_vec));
     
 for SNR_idx = 1:length(SNR_vec)
     SNR = SNR_vec(SNR_idx);
-    sigma = B/10^(SNR/20);
-    awgn = sigma*randn(N, M);
+    sigma = B/(10^(SNR/20));
+    awgn = sigma*complex(randn(N, M), randn(N, M));
     x1_bp = x1_bp_noiseless;
     
 

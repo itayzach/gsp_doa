@@ -14,7 +14,7 @@ B = 1;                % amplitude [V]
 x = B*cos(w0/fs*n);
 figure; plot(x); title('cos');
 
-x_hat = fftshift(fft(x, L));
+x_hat = fftshift(fft(x, L))/L;
 
 h_hat = zeros(L,1);
 k0 = floor(L/2 + (f0/fs)*L + 1); % L/2 for the fftshift
