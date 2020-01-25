@@ -108,15 +108,15 @@ class GCN(nn.Module):
 
         A, Ar, Ai = get_adjacency(theta=theta_d)
 
+        # Add self loops
         I = np.eye(A.shape[0]) + 1j*np.eye(A.shape[0])
         A_h = A + I
 
         dii = np.sum(np.abs(A_h), axis=1, keepdims=False)
-        D = np.diag(dii)
         D_inv_h = np.diag(dii ** (-0.5))
+
         # Laplacian
         L = np.matmul(D_inv_h, np.matmul(A_h, D_inv_h))
-        # L = I
         # visualize_complex_matrix(L[0:10,0:10], 'L')
 
         max_deg = 2
@@ -199,18 +199,16 @@ class GCNLayer(nn.Module):
 
 
 ####################################################################################################################
-# MLP
+# CNN
 ####################################################################################################################
-class MLP(nn.Module):
+class CNN(nn.Module):
     def __init__(self):
-        super(MLP, self).__init__()
+        super(CNN, self).__init__()
         self.conv1 = ComplexConv1d(1, 20, bias=True, kernel_size=1)
         self.conv2 = ComplexConv1d(20, 1, bias=True, kernel_size=1)
         self.fc1 = nn.Linear(N * M, 2, bias=True)
 
     def forward(self, xr, xi):
-        # xr = xr.squeeze()
-        # xi = xi.squeeze()
         xr = xr.permute(0, 2, 1)
         xi = xi.permute(0, 2, 1)
         xr, xi = self.conv1(xr, xi)

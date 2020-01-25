@@ -150,6 +150,8 @@ def gsp_doa(test_set):
     # SNR_vec = np.array([-15, float("inf")])  # [dB]
     # plt.figure()
 
+    plot_piquancy = True
+
     K = test_set.__len__()
     est_theta_vec = np.empty(K, dtype=np.long)
     est_labels_vec = np.empty(K, dtype=np.long)
@@ -225,16 +227,17 @@ def gsp_doa(test_set):
                   f'accuracy = {curr_correct_vec[snr_idx].item()}/{curr_points_per_snr} ({curr_acc:.2f}%) | ' +
                   f'progress = {k}/{K} ({100. * k / K:.2f}%)')
 
-        # plt.axvline(x=theta_d, color='r')
-        # plt.plot(piquancy, label='SNR = ' + str(snr) + ' [dB]', linewidth=2)
-        # plt.xlabel(r'$\theta$')
-        # plt.ylabel(r'$\xi(\theta)$')
-    # plt.legend(loc='upper right')
-    # plt.xticks(np.arange(0, 180, step=20))
-    # plt.xlim(theta_axis[0], theta_axis[-1])
-    # plt.ylim(0, 1)
-    # plt.show()
-
+        if plot_piquancy and ground_truth_label == 1 and ground_truth_label != est_label and snr >= 16:
+            fig = plt.figure()
+            plt.plot(theta_axis[est_theta_idx - 50:est_theta_idx + 50], piquancy[est_theta_idx - 50:est_theta_idx + 50], label='SNR = ' + str(snr) + ' [dB]', linewidth=3)
+            plt.axvline(x=theta_d, color='r', linewidth=3)
+            plt.title(fr'$\theta_d = {theta_d:.1f}$; ' + r'$\hat{\theta}' + rf'= {est_theta:.2f}$')
+            plt.xlabel(r'$\theta$')
+            plt.ylabel(r'$\xi(\theta)$')
+            plt.xlim(theta_axis[est_theta_idx - 50], theta_axis[est_theta_idx + 50])
+            plt.ylim(0, 1)
+            fig.savefig(plots_dir + '/piquancy_' + f'{theta_d:.1f}'.replace(".", "_") + '__' + f'{est_theta:.2f}'.replace(".", "_") + '.png', dpi=200)
+            plot_piquancy = False
     true_accuracy_vs_snr = 100.0 * true_correct_vec / test_set.num_true_points_per_snr
     false_accuracy_vs_snr = 100.0 * false_correct_vec / test_set.num_false_points_per_snr
 

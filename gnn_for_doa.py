@@ -6,7 +6,7 @@ import torch.optim as optim
 import numpy as np
 import matplotlib.pyplot as plt
 from gsp import gsp_doa, plot_random_signal, get_noiseless_signal
-from gnn import GCN, MLP, GraphSignalsDataset, plot_accuracy, gnn_doa, visualize_complex_matrix
+from gnn import GCN, CNN, GraphSignalsDataset, plot_accuracy, gnn_doa, visualize_complex_matrix
 from parameters import plots_dir, Amp, f0, N, M
 from utils import mkdir_p
 
@@ -47,12 +47,12 @@ def test(args, model, device, test_loader):
     return 100.0*correct/len(test_loader.dataset)
 
 
-def compare_methods(snr_vec, label, gsp_doa_accuracy_vs_snr, mlp_doa_accuracy_vs_snr, gnn_doa_accuracy_vs_snr, interferences_str):
+def compare_methods(snr_vec, label, gsp_doa_accuracy_vs_snr, cnn_doa_accuracy_vs_snr, gnn_doa_accuracy_vs_snr, interferences_str):
     fig = plt.figure()
     if gsp_doa_accuracy_vs_snr.size > 0:
         plt.plot(snr_vec, gsp_doa_accuracy_vs_snr, label='GSP', linewidth=2)
-    if mlp_doa_accuracy_vs_snr.size > 0:
-        plt.plot(snr_vec, mlp_doa_accuracy_vs_snr, label='CNN', linewidth=2)
+    if cnn_doa_accuracy_vs_snr.size > 0:
+        plt.plot(snr_vec, cnn_doa_accuracy_vs_snr, label='CNN', linewidth=2)
     if gnn_doa_accuracy_vs_snr.size > 0:
         plt.plot(snr_vec, gnn_doa_accuracy_vs_snr, label='GNN', linewidth=2)
     plt.legend()
@@ -91,7 +91,7 @@ def main():
                         help='Run Graph Signal Processing DOA estimation')
     parser.add_argument('--run-gnn-doa', type=bool, default=True,
                         help='Run Graph Neural Network DOA estimation')
-    parser.add_argument('--run-mlp-doa', type=bool, default=True,
+    parser.add_argument('--run-cnn-doa', type=bool, default=True,
                         help='Run Multi Layer Perceptron DOA estimation')
     args = parser.parse_args()
 
@@ -102,9 +102,10 @@ def main():
 
     snr_vec_train = np.arange(start=-5, stop=20, step=3)
     snr_vec_test = np.arange(start=-5, stop=20, step=3)
+    # snr_vec_test = snr_vec_test[::-1]
 
-    interference1 = get_noiseless_signal(A=1.5*Amp, f=f0, theta=30)
-    interference2 = get_noiseless_signal(A=1.5*Amp, f=f0, theta=120)
+    interference1 = get_noiseless_signal(A=0.5*Amp, f=f0, theta=30)
+    interference2 = get_noiseless_signal(A=0.5*Amp, f=f0, theta=120)
 
     train_set = GraphSignalsDataset(num_true_points_per_snr=100,
                                     num_false_points_per_snr=100,
@@ -140,72 +141,74 @@ def main():
     print(f'Test set size = {test_set0.__len__()}')
 
     gsp_doa_accuracy_vs_snr0 = np.array([])
-    mlp_doa_accuracy_vs_snr0 = np.array([])
+    cnn_doa_accuracy_vs_snr0 = np.array([])
     gnn_doa_accuracy_vs_snr0 = np.array([])
 
     gsp_doa_accuracy_vs_snr1 = np.array([])
-    mlp_doa_accuracy_vs_snr1 = np.array([])
+    cnn_doa_accuracy_vs_snr1 = np.array([])
     gnn_doa_accuracy_vs_snr1 = np.array([])
 
     gsp_doa_accuracy_vs_snr2 = np.array([])
-    mlp_doa_accuracy_vs_snr2 = np.array([])
+    cnn_doa_accuracy_vs_snr2 = np.array([])
     gnn_doa_accuracy_vs_snr2 = np.array([])
 
     ####################################################################################################################
     # Plot data samples
     ####################################################################################################################
     if args.plot_gsp_figs:
-        plot_random_signal(test_set2.get_signals(), label=True, snr=14, interference_str='2',  theta_str='theta_d', snr_str='high_snr')
-        plot_random_signal(test_set2.get_signals(), label=False, snr=14, interference_str='2',  theta_str='not_theta_d', snr_str='high_snr')
-        plot_random_signal(test_set2.get_signals(), label=True, snr=-5, interference_str='2',  theta_str='theta_d', snr_str='low_snr')
-        plot_random_signal(test_set2.get_signals(), label=False, snr=-5, interference_str='2',  theta_str='not_theta_d', snr_str='low_snr')
-        plot_random_signal(test_set1.get_signals(), label=True, snr=14, interference_str='1', theta_str='theta_d', snr_str='high_snr')
-        plot_random_signal(test_set1.get_signals(), label=False, snr=14, interference_str='1', theta_str='not_theta_d', snr_str='high_snr')
-        plot_random_signal(test_set1.get_signals(), label=True, snr=-5, interference_str='1', theta_str='theta_d', snr_str='low_snr')
-        plot_random_signal(test_set1.get_signals(), label=False, snr=-5, interference_str='1', theta_str='not_theta_d', snr_str='low_snr')
         plot_random_signal(test_set0.get_signals(), label=True, snr=14, interference_str='0', theta_str='theta_d', snr_str='high_snr')
         plot_random_signal(test_set0.get_signals(), label=False, snr=14, interference_str='0', theta_str='not_theta_d', snr_str='high_snr')
         plot_random_signal(test_set0.get_signals(), label=True, snr=-5, interference_str='0', theta_str='theta_d', snr_str='low_snr')
         plot_random_signal(test_set0.get_signals(), label=False, snr=-5, interference_str='0', theta_str='not_theta_d', snr_str='low_snr')
+
+        plot_random_signal(test_set1.get_signals(), label=True, snr=14, interference_str='1', theta_str='theta_d', snr_str='high_snr')
+        plot_random_signal(test_set1.get_signals(), label=False, snr=14, interference_str='1', theta_str='not_theta_d', snr_str='high_snr')
+        plot_random_signal(test_set1.get_signals(), label=True, snr=-5, interference_str='1', theta_str='theta_d', snr_str='low_snr')
+        plot_random_signal(test_set1.get_signals(), label=False, snr=-5, interference_str='1', theta_str='not_theta_d', snr_str='low_snr')
+
+        plot_random_signal(test_set2.get_signals(), label=True, snr=14, interference_str='2',  theta_str='theta_d', snr_str='high_snr')
+        plot_random_signal(test_set2.get_signals(), label=False, snr=14, interference_str='2',  theta_str='not_theta_d', snr_str='high_snr')
+        plot_random_signal(test_set2.get_signals(), label=True, snr=-5, interference_str='2',  theta_str='theta_d', snr_str='low_snr')
+        plot_random_signal(test_set2.get_signals(), label=False, snr=-5, interference_str='2',  theta_str='not_theta_d', snr_str='low_snr')
     ####################################################################################################################
     # Multi Layer Perceptron DOA
     ####################################################################################################################
-    if args.run_mlp_doa:
+    if args.run_cnn_doa:
         # model = GraphNet().to(device)
-        mlp_model = MLP().to(device)
-        print(mlp_model)
-        optimizer = optim.SGD(mlp_model.parameters(), lr=args.lr, weight_decay=1e-1)
+        cnn_model = CNN().to(device)
+        print(cnn_model)
+        optimizer = optim.SGD(cnn_model.parameters(), lr=args.lr, weight_decay=1e-1)
         print('number of trainable parameters: %d' %
-              np.sum([np.prod(p.size()) if p.requires_grad else 0 for p in mlp_model.parameters()]))
+              np.sum([np.prod(p.size()) if p.requires_grad else 0 for p in cnn_model.parameters()]))
 
         train_acc_vec = np.array([])
         test_acc_vec = np.array([])
 
         for epoch in range(1, args.epochs + 1):
-            train_acc = train(args, mlp_model, device, train_loader, optimizer, epoch)
-            test_acc = test(args, mlp_model, device, test_loader0)
+            train_acc = train(args, cnn_model, device, train_loader, optimizer, epoch)
+            test_acc = test(args, cnn_model, device, test_loader0)
 
             train_acc_vec = np.append(train_acc_vec, train_acc)
             test_acc_vec = np.append(test_acc_vec, test_acc)
 
         plot_accuracy(args, 'CNN', train_acc_vec, test_acc_vec)
 
-        mlp_doa_est_labels_vec0, mlp_doa_true_accuracy_vs_snr0, mlp_doa_false_accuracy_vs_snr0 = gnn_doa(mlp_model, test_set0)
-        mlp_doa_accuracy_vs_snr0 = (mlp_doa_true_accuracy_vs_snr0 + mlp_doa_false_accuracy_vs_snr0) / 2
-        mlp_doa_est_labels_vec1, mlp_doa_true_accuracy_vs_snr1, mlp_doa_false_accuracy_vs_snr1 = gnn_doa(mlp_model, test_set1)
-        mlp_doa_accuracy_vs_snr1 = (mlp_doa_true_accuracy_vs_snr1 + mlp_doa_false_accuracy_vs_snr1) / 2
-        mlp_doa_est_labels_vec2, mlp_doa_true_accuracy_vs_snr2, mlp_doa_false_accuracy_vs_snr2 = gnn_doa(mlp_model, test_set2)
-        mlp_doa_accuracy_vs_snr2 = (mlp_doa_true_accuracy_vs_snr2 + mlp_doa_false_accuracy_vs_snr2) / 2
-        # visualize_complex_matrix(mlp_model.fc1.fc_r.weight.data.numpy() +
-        #                          1j * mlp_model.fc1.fc_i.weight.data.numpy(), 'MLP weights')
-        # W_mlp = mlp_model.fc1.fc_r.weight.data.numpy() + 1j * mlp_model.fc1.fc_i.weight.data.numpy()
-        # print(np.linalg.norm(W_mlp))
+        cnn_doa_est_labels_vec0, cnn_doa_true_accuracy_vs_snr0, cnn_doa_false_accuracy_vs_snr0 = gnn_doa(cnn_model, test_set0)
+        cnn_doa_accuracy_vs_snr0 = (cnn_doa_true_accuracy_vs_snr0 + cnn_doa_false_accuracy_vs_snr0) / 2
+        cnn_doa_est_labels_vec1, cnn_doa_true_accuracy_vs_snr1, cnn_doa_false_accuracy_vs_snr1 = gnn_doa(cnn_model, test_set1)
+        cnn_doa_accuracy_vs_snr1 = (cnn_doa_true_accuracy_vs_snr1 + cnn_doa_false_accuracy_vs_snr1) / 2
+        cnn_doa_est_labels_vec2, cnn_doa_true_accuracy_vs_snr2, cnn_doa_false_accuracy_vs_snr2 = gnn_doa(cnn_model, test_set2)
+        cnn_doa_accuracy_vs_snr2 = (cnn_doa_true_accuracy_vs_snr2 + cnn_doa_false_accuracy_vs_snr2) / 2
+        # visualize_complex_matrix(cnn_model.fc1.fc_r.weight.data.numpy() +
+        #                          1j * cnn_model.fc1.fc_i.weight.data.numpy(), 'CNN weights')
+        # W_cnn = cnn_model.fc1.fc_r.weight.data.numpy() + 1j * cnn_model.fc1.fc_i.weight.data.numpy()
+        # print(np.linalg.norm(W_cnn))
 
         np.set_printoptions(precision=2)
-        print("MLP accuracy:")
-        print(mlp_doa_accuracy_vs_snr0)
-        print(mlp_doa_accuracy_vs_snr1)
-        print(mlp_doa_accuracy_vs_snr2)
+        print("CNN accuracy:")
+        print(cnn_doa_accuracy_vs_snr0)
+        print(cnn_doa_accuracy_vs_snr1)
+        print(cnn_doa_accuracy_vs_snr2)
     ####################################################################################################################
     # Graph Neural Network DOA
     ####################################################################################################################
@@ -256,11 +259,11 @@ def main():
         gsp_doa_est_theta_vec2, gsp_doa_est_labels_vec2, gsp_doa_true_accuracy_vs_snr2, gsp_doa_false_accuracy_vs_snr2 = gsp_doa(test_set2)
         gsp_doa_accuracy_vs_snr2 = (gsp_doa_true_accuracy_vs_snr2 + gsp_doa_false_accuracy_vs_snr2) / 2
 
-        gsp_doa_est_theta_vec1, gsp_doa_est_labels_vec1, gsp_doa_true_accuracy_vs_snr1, gsp_doa_false_accuracy_vs_snr1 = gsp_doa(test_set1)
-        gsp_doa_accuracy_vs_snr1 = (gsp_doa_true_accuracy_vs_snr1 + gsp_doa_false_accuracy_vs_snr1) / 2
+        # gsp_doa_est_theta_vec1, gsp_doa_est_labels_vec1, gsp_doa_true_accuracy_vs_snr1, gsp_doa_false_accuracy_vs_snr1 = gsp_doa(test_set1)
+        # gsp_doa_accuracy_vs_snr1 = (gsp_doa_true_accuracy_vs_snr1 + gsp_doa_false_accuracy_vs_snr1) / 2
 
-        gsp_doa_est_theta_vec0, gsp_doa_est_labels_vec0, gsp_doa_true_accuracy_vs_snr0, gsp_doa_false_accuracy_vs_snr0 = gsp_doa(test_set0)
-        gsp_doa_accuracy_vs_snr0 = (gsp_doa_true_accuracy_vs_snr0 + gsp_doa_false_accuracy_vs_snr0) / 2
+        # gsp_doa_est_theta_vec0, gsp_doa_est_labels_vec0, gsp_doa_true_accuracy_vs_snr0, gsp_doa_false_accuracy_vs_snr0 = gsp_doa(test_set0)
+        # gsp_doa_accuracy_vs_snr0 = (gsp_doa_true_accuracy_vs_snr0 + gsp_doa_false_accuracy_vs_snr0) / 2
 
         np.set_printoptions(precision=2)
         print("GSP accuracy:")
@@ -273,15 +276,15 @@ def main():
     ####################################################################################################################
     compare_methods(test_set0.signals['snr'], '',
                     gsp_doa_accuracy_vs_snr0,
-                    mlp_doa_accuracy_vs_snr0,
+                    cnn_doa_accuracy_vs_snr0,
                     gnn_doa_accuracy_vs_snr0, '0')
     compare_methods(test_set0.signals['snr'], '',
                     gsp_doa_accuracy_vs_snr1,
-                    mlp_doa_accuracy_vs_snr1,
+                    cnn_doa_accuracy_vs_snr1,
                     gnn_doa_accuracy_vs_snr1, '1')
     compare_methods(test_set0.signals['snr'], '',
                     gsp_doa_accuracy_vs_snr2,
-                    mlp_doa_accuracy_vs_snr2,
+                    cnn_doa_accuracy_vs_snr2,
                     gnn_doa_accuracy_vs_snr2, '2')
     print("All done.")
 
